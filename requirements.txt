@@ -1,0 +1,12 @@
+# Volleyball video recognition — PoC dependencies
+#
+# On a 2017 (Intel) MacBook, install the CPU build of torch. ultralytics will
+# otherwise try to pull a large CUDA build you can't use.
+#
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   pip install -r requirements.txt
+#
+ultralytics>=8.1          # YOLOv8 detection + ByteTrack tracking
+opencv-python>=4.8        # video I/O + drawing (use opencv-python-headless on servers)
+numpy>=1.24
+lap>=0.5                  # required by ByteTrack for ID assignment

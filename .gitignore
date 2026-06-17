@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+
+# Model weights (downloaded on first run, don't commit)
+*.pt
+*.onnx
+*.engine
+
+# Media: don't commit video (large; bring your own footage)
+*.mp4
+*.mov
+*.avi
+*.mkv
+
+# Pipeline outputs
+outputs/
+runs/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
