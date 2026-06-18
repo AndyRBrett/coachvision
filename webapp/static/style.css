@@ -94,3 +94,28 @@ button:disabled { opacity: 0.5; cursor: default; }
 .video-wrap { position: relative; width: 100%; line-height: 0; }
 #video { width: 100%; border-radius: 8px; display: block; }
 #overlay { position: absolute; inset: 0; pointer-events: none; }
+
+.metrics { margin-top: 18px; }
+.metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+.metric {
+  background: #1f232b;
+  border: 1px solid #262a33;
+  border-radius: 10px;
+  padding: 14px;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.metric .big { display: block; font-size: 1.6rem; font-weight: 700; color: var(--ink); }
+.metric-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.metric-cols h3 { font-size: 0.95rem; margin: 0 0 8px; }
+.metric-cols .unit { color: var(--muted); font-weight: 400; font-size: 0.8rem; }
+.rally-list, .player-list { list-style: none; margin: 0 0 16px; padding: 0; font-size: 0.9rem; }
+.rally-list li, .player-list li { padding: 4px 0; border-bottom: 1px solid #20242c; }
+.muted { color: var(--muted); }
+#heatmap { width: 100%; max-width: 320px; background: #11141a; border-radius: 8px; border: 1px solid #262a33; }
+
+@media (max-width: 680px) {
+  .metric-grid { grid-template-columns: repeat(2, 1fr); }
+  .metric-cols { grid-template-columns: 1fr; }
+}

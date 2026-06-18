@@ -37,6 +37,12 @@ JOBS_DIR = Path(__file__).resolve().parent / "jobs"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 JOBS_DIR.mkdir(exist_ok=True)
 
+sys.path.insert(0, str(REPO_ROOT / "poc"))
+try:
+    from metrics import compute_metrics  # local metrics layer
+except Exception:  # noqa: BLE001 - metrics are optional; pipeline still works
+    compute_metrics = None
+
 RF_MODEL = os.environ.get("RF_MODEL", "volleyball_detection/2")
 DEFAULT_STRIDE = int(os.environ.get("PIPELINE_STRIDE", "5"))
 
@@ -104,11 +110,26 @@ def _process_job(job_id: str, clip: Path, stride: int) -> None:
         with_ball = data.get("frames_with_ball", 0)
         pct = round(100.0 * with_ball / frames, 1) if frames else 0.0
     except (json.JSONDecodeError, OSError):
-        frames, with_ball, pct = 0, 0, 0.0
+        data, frames, with_ball, pct = None, 0, 0, 0.0
+
+    # Metrics layer (local, no API): rallies, ball speed, player heatmap.
+    summary = {}
+    if compute_metrics is not None and data is not None:
+        try:
+            m = compute_metrics(data)
+            (job_dir / "metrics.json").write_text(json.dumps(m, indent=2))
+            summary = {
+                "rally_count": m["rally_count"],
+                "track_count": m["players"]["track_count"],
+                "ball_avg_speed": m["ball"]["avg_speed_px_s"],
+                "ball_max_speed": m["ball"]["max_speed_px_s"],
+            }
+        except Exception as e:  # noqa: BLE001 - metrics failure shouldn't fail the job
+            summary = {"metrics_error": str(e)}
 
     _write_status(job_id, status="done", message="Complete.", finished=_now(),
                   frames=frames, frames_with_ball=with_ball, ball_pct=pct,
-                  has_video=annotated.exists())
+                  has_video=annotated.exists(), **summary)
 
 
 @app.post("/api/upload")
@@ -167,6 +188,14 @@ async def job_events(job_id: str):
     path = JOBS_DIR / job_id / "events.json"
     if not path.exists():
         raise HTTPException(404, "No events for this job.")
+    return FileResponse(path, media_type="application/json")
+
+
+@app.get("/api/jobs/{job_id}/metrics")
+async def job_metrics(job_id: str):
+    path = JOBS_DIR / job_id / "metrics.json"
+    if not path.exists():
+        raise HTTPException(404, "No metrics for this job.")
     return FileResponse(path, media_type="application/json")
 
 

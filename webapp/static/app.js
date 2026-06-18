@@ -86,6 +86,7 @@ $("#upload-form").addEventListener("submit", async (e) => {
 // ---- Result view: video + ball-path overlay ----
 
 let events = null;      // parsed events.json
+let metrics = null;     // parsed metrics.json
 let frameSize = [0, 0]; // native [w, h] the coords are in
 
 async function openResult(job) {
@@ -106,7 +107,67 @@ async function openResult(job) {
   } catch (e) {
     events = [];
   }
+  try {
+    const res = await fetch(`/api/jobs/${job.id}/metrics`);
+    metrics = res.ok ? await res.json() : null;
+  } catch (e) {
+    metrics = null;
+  }
+  renderMetrics();
   $("#result-card").scrollIntoView({ behavior: "smooth" });
+}
+
+function renderMetrics() {
+  const grid = $("#metric-grid");
+  const rallyList = $("#rally-list");
+  const playerList = $("#player-list");
+  if (!metrics) {
+    grid.innerHTML = '<div class="metric"><span class="big">—</span>metrics unavailable</div>';
+    rallyList.innerHTML = playerList.innerHTML = "";
+    return;
+  }
+  const b = metrics.ball || {};
+  const cards = [
+    [metrics.rally_count ?? 0, "rallies"],
+    [metrics.players?.track_count ?? 0, "players tracked"],
+    [Math.round(b.avg_speed_px_s ?? 0), "avg ball speed (px/s)"],
+    [Math.round(b.max_speed_px_s ?? 0), "max ball speed (px/s)"],
+  ];
+  grid.innerHTML = cards.map(([v, l]) =>
+    `<div class="metric"><span class="big">${v}</span>${l}</div>`).join("");
+
+  rallyList.innerHTML = (metrics.rallies || []).length
+    ? metrics.rallies.map((r) =>
+        `<li>Rally ${r.index}: ${r.duration_s}s <span class="muted">(${r.start_s}–${r.end_s}s)</span></li>`).join("")
+    : '<li class="muted">No rallies detected.</li>';
+
+  const tracks = (metrics.players?.per_track || []).slice().sort((a, b) => b.distance_px - a.distance_px);
+  playerList.innerHTML = tracks.length
+    ? tracks.map((p) =>
+        `<li>P${p.track_id}: ${p.distance_px}px <span class="muted">(${p.frames_seen} frames)</span></li>`).join("")
+    : '<li class="muted">No tracked players.</li>';
+
+  drawHeatmap(metrics.players?.heatmap);
+}
+
+function drawHeatmap(hm) {
+  const cv = $("#heatmap");
+  const hctx = cv.getContext("2d");
+  hctx.clearRect(0, 0, cv.width, cv.height);
+  if (!hm || !hm.grid) return;
+  const { cols, rows, grid } = hm;
+  const cw = cv.width / cols, ch = cv.height / rows;
+  let max = 0;
+  for (const row of grid) for (const v of row) if (v > max) max = v;
+  if (max === 0) return;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const v = grid[r][c] / max;
+      if (v <= 0) continue;
+      hctx.fillStyle = `rgba(255, ${Math.round(170 * (1 - v))}, 0, ${0.15 + 0.85 * v})`;
+      hctx.fillRect(c * cw, r * ch, cw + 0.5, ch + 0.5);
+    }
+  }
 }
 
 const video = $("#video");
@@ -120,6 +181,11 @@ function sizeCanvas() {
 }
 
 function ballPoints() {
+  // Prefer the interpolated metrics path (smoother, gaps filled); fall back to
+  // raw per-frame detections from events.
+  if (metrics && metrics.ball && Array.isArray(metrics.ball.path) && metrics.ball.path.length) {
+    return metrics.ball.path.map((p) => ({ t: p.time_s, x: p.x, y: p.y }));
+  }
   if (!events) return [];
   return events
     .filter((ev) => ev.ball && ev.ball.center)

@@ -44,6 +44,23 @@
         <video id="video" controls preload="metadata"></video>
         <canvas id="overlay"></canvas>
       </div>
+
+      <div class="metrics" id="metrics">
+        <div class="metric-grid" id="metric-grid"></div>
+        <div class="metric-cols">
+          <div>
+            <h3>Rallies</h3>
+            <ul id="rally-list" class="rally-list"></ul>
+          </div>
+          <div>
+            <h3>Player movement <span class="unit">(pixels)</span></h3>
+            <ul id="player-list" class="player-list"></ul>
+            <h3>Position heatmap</h3>
+            <canvas id="heatmap" width="320" height="180"></canvas>
+          </div>
+        </div>
+        <p class="hint">Distances and speeds are in pixels — court calibration (next) converts to metres / mph. Rallies are a heuristic from ball presence.</p>
+      </div>
     </section>
   </main>
 
