@@ -32,6 +32,8 @@ MAX_INTERP_GAP_S = 0.4   # fill ball gaps no longer than this; longer = off-scre
 RALLY_BREAK_S = 1.5      # ball absent longer than this ends a rally
 MIN_RALLY_S = 1.0        # ignore "rallies" shorter than this
 SPEED_OUTLIER_PX_S = 6000  # ignore implausible single-step speeds (detection jitter)
+STATIC_RADIUS_PX = 40.0  # movement below this between samples = likely a static object
+STATIC_MIN_RUN = 5       # consecutive static samples treated as a false latch (flagpole/light)
 HEATMAP_COLS = 32
 HEATMAP_ROWS = 18        # 32x18 ~ 16:9
 
@@ -114,11 +116,53 @@ def _reject_outliers(detected):
     return pts
 
 
+def _reject_static(detected):
+    """Drop sustained near-stationary runs — the ball never sits still mid-rally,
+    so a run of samples that barely move is a static false positive (a flagpole,
+    light, or background object the model picked while the real ball was out of
+    frame). Removing them makes the ball cleanly *absent* during those frames
+    rather than latched onto the static object.
+    """
+    n = len(detected)
+    if n < STATIC_MIN_RUN:
+        return detected
+
+    def step(i, j):
+        a, b = detected[i][2], detected[j][2]
+        return math.hypot(b[0] - a[0], b[1] - a[1])
+
+    static = [False] * n
+    for i in range(n):
+        moves = []
+        if i > 0:
+            moves.append(step(i - 1, i))
+        if i < n - 1:
+            moves.append(step(i, i + 1))
+        # min(): a point next to a static neighbour counts as static, so the
+        # jump-in / jump-out boundary frames of a flagpole latch are caught too.
+        static[i] = bool(moves) and min(moves) < STATIC_RADIUS_PX
+
+    keep = [True] * n
+    i = 0
+    while i < n:
+        if static[i]:
+            j = i
+            while j < n and static[j]:
+                j += 1
+            if j - i >= STATIC_MIN_RUN:
+                for k in range(i, j):
+                    keep[k] = False
+            i = j
+        else:
+            i += 1
+    return [d for d, k in zip(detected, keep) if k]
+
+
 def _interpolate_ball(events, fps) -> list[dict]:
     """Fill short gaps between ball detections with linear interpolation."""
     detected = [(e["frame"], e["time_s"], e["ball"]["center"])
                 for e in events if e.get("ball")]
-    detected = _reject_outliers(detected)
+    detected = _reject_static(_reject_outliers(detected))
     if not detected:
         return []
     max_gap_frames = MAX_INTERP_GAP_S * fps

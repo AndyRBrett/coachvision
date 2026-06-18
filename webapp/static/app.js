@@ -206,8 +206,12 @@ function ballPoints() {
     .map((ev) => ({ t: ev.time_s, x: ev.ball.center[0], y: ev.ball.center[1] }));
 }
 
+const BALL_GAP_S = 0.5;  // gap longer than this = ball is absent; don't bridge it
+
 // Ball position interpolated to an exact time `now` (between the two nearest
 // samples), so the marker tracks smoothly instead of snapping to the last frame.
+// Returns null across a long gap, so the ball goes absent when it's out of frame
+// instead of sliding across where it isn't.
 function ballAt(now, pts) {
   if (!pts.length) return null;
   let prev = null, next = null;
@@ -216,11 +220,14 @@ function ballAt(now, pts) {
     else { next = p; break; }
   }
   if (prev && next) {
+    if (next.t - prev.t > BALL_GAP_S) return null;  // ball absent in this gap
     const span = next.t - prev.t || 1;
     const a = (now - prev.t) / span;
     return { x: prev.x + (next.x - prev.x) * a, y: prev.y + (next.y - prev.y) * a };
   }
-  return prev || next;
+  // Only show the lone endpoint if `now` is right next to it (not far past/before).
+  const p = prev || next;
+  return p && Math.abs(p.t - now) <= BALL_GAP_S ? p : null;
 }
 
 function currentEvent() {
@@ -264,6 +271,7 @@ function drawOverlay() {
     const TRAIL_S = 1.5;
     const seg = pts.filter((p) => p.t >= now - TRAIL_S && p.t <= now);
     for (let i = 1; i < seg.length; i++) {
+      if (seg[i].t - seg[i - 1].t > BALL_GAP_S) continue;  // don't bridge a gap
       const a = i / seg.length;  // fade older segments
       ctx.strokeStyle = `rgba(255, 170, 0, ${0.2 + 0.8 * a})`;
       ctx.lineWidth = 3;
