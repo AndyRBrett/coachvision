@@ -183,6 +183,22 @@ async def job_video(job_id: str):
     return FileResponse(path, media_type="video/mp4")
 
 
+@app.get("/api/jobs/{job_id}/source")
+async def job_source(job_id: str):
+    """The original uploaded clip (browser-playable H.264 from phones).
+
+    The annotated mp4 is written with OpenCV's mp4v codec, which browsers can't
+    decode — so the UI plays the source clip and draws overlays on a canvas.
+    """
+    job_dir = JOBS_DIR / job_id
+    matches = sorted(job_dir.glob("clip.*")) if job_dir.exists() else []
+    if not matches:
+        raise HTTPException(404, "No source clip for this job.")
+    clip = matches[0]
+    media = "video/quicktime" if clip.suffix.lower() == ".mov" else "video/mp4"
+    return FileResponse(clip, media_type=media)
+
+
 @app.get("/api/jobs/{job_id}/events")
 async def job_events(job_id: str):
     path = JOBS_DIR / job_id / "events.json"

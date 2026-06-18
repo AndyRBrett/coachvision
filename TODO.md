@@ -31,5 +31,10 @@ private.
 
 - **Regenerate the Roboflow API key** that was shared during setup (it was pasted
   into a chat). Roboflow → Settings → API Keys → regenerate.
-- Player ID stability looked good on test footage; if ID swaps show up on busier
-  clips, revisit ByteTrack params or a stronger player model.
+- **Player ID churn (confirmed).** On a longer/busier clip the tracker reported
+  ~47 distinct IDs for a handful of real players — ByteTrack spawns new IDs when
+  players cluster at the net, cross, or briefly leave frame. The "players tracked"
+  metric is inflated as a result. Fixes to try: tune ByteTrack
+  (`track_buffer`, match thresholds), use a stronger detector (yolov8s/m), or add
+  re-identification. Until then, treat track_count as an upper bound and consider
+  reporting only tracks seen in >= N frames.

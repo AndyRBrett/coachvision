@@ -98,7 +98,8 @@ async function openResult(job) {
   $("#result-stats").textContent = `${job.frames ?? 0} frames processed${ballNote}.`;
 
   const video = $("#video");
-  video.src = `/api/jobs/${job.id}/video`;
+  // Play the original clip (browser-playable); overlays are drawn on the canvas.
+  video.src = `/api/jobs/${job.id}/source`;
 
   try {
     const data = await (await fetch(`/api/jobs/${job.id}/events`)).json();
@@ -192,42 +193,74 @@ function ballPoints() {
     .map((ev) => ({ t: ev.time_s, x: ev.ball.center[0], y: ev.ball.center[1] }));
 }
 
+function currentEvent() {
+  if (!events || !events.length) return null;
+  const now = video.currentTime;
+  let cur = events[0];
+  for (const e of events) {
+    if (e.time_s <= now) cur = e; else break;
+  }
+  return cur;
+}
+
 function drawOverlay() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  if (!events || !frameSize[0] || !$("#show-path").checked) return;
-
+  if (!frameSize[0]) return;
   const sx = canvas.width / frameSize[0];
   const sy = canvas.height / frameSize[1];
-  const pts = ballPoints();
-  if (pts.length < 2) return;
 
-  // Full trajectory line.
-  ctx.lineWidth = 2.5;
-  ctx.strokeStyle = "rgba(255, 170, 0, 0.85)";
-  ctx.beginPath();
-  pts.forEach((p, i) => {
-    const x = p.x * sx, y = p.y * sy;
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-  });
-  ctx.stroke();
-
-  // Current position ring, synced to playback time.
-  const now = video.currentTime;
-  let cur = null;
-  for (const p of pts) {
-    if (p.t <= now) cur = p; else break;
+  // Player boxes + IDs for the current frame.
+  const ev = currentEvent();
+  if (ev && ev.players) {
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(46, 204, 113, 0.9)";
+    ctx.fillStyle = "rgba(46, 204, 113, 0.95)";
+    ctx.font = "12px -apple-system, sans-serif";
+    for (const p of ev.players) {
+      const [x1, y1, x2, y2] = p.bbox;
+      ctx.strokeRect(x1 * sx, y1 * sy, (x2 - x1) * sx, (y2 - y1) * sy);
+      if (p.track_id != null) {
+        ctx.fillText("P" + p.track_id, x1 * sx, Math.max(11, y1 * sy - 3));
+      }
+    }
   }
-  if (cur) {
+
+  // Full ball trajectory line (toggle).
+  const pts = ballPoints();
+  if ($("#show-path").checked && pts.length >= 2) {
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = "rgba(255, 170, 0, 0.85)";
     ctx.beginPath();
-    ctx.arc(cur.x * sx, cur.y * sy, 9, 0, Math.PI * 2);
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "rgba(255, 60, 60, 0.95)";
+    pts.forEach((p, i) => {
+      const x = p.x * sx, y = p.y * sy;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
     ctx.stroke();
+  }
+
+  // Ball at the current frame (prefer the exact detection, else nearest path point).
+  let ball = ev && ev.ball ? { x: ev.ball.center[0], y: ev.ball.center[1] } : null;
+  if (!ball) {
+    const now = video.currentTime;
+    for (const p of pts) { if (p.t <= now) ball = p; else break; }
+  }
+  if (ball) {
+    ctx.beginPath();
+    ctx.arc(ball.x * sx, ball.y * sy, 8, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255, 60, 60, 0.95)";
+    ctx.fill();
   }
 }
 
+let rafId = null;
+function loop() { drawOverlay(); rafId = requestAnimationFrame(loop); }
+function stopLoop() { if (rafId) { cancelAnimationFrame(rafId); rafId = null; } }
+
 video.addEventListener("loadedmetadata", sizeCanvas);
-video.addEventListener("timeupdate", drawOverlay);
+video.addEventListener("play", () => { if (!rafId) loop(); });
+video.addEventListener("pause", () => { stopLoop(); drawOverlay(); });
+video.addEventListener("ended", stopLoop);
+video.addEventListener("timeupdate", drawOverlay);  // covers paused scrubbing
 video.addEventListener("seeked", drawOverlay);
 window.addEventListener("resize", sizeCanvas);
 $("#show-path").addEventListener("change", drawOverlay);
