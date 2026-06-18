@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Volleyball Analysis</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header>
+    <h1>🏐 Volleyball Analysis</h1>
+    <p class="sub">Upload a clip → players tracked + ball detected → annotated playback with the ball's full path.</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Upload a clip</h2>
+      <form id="upload-form">
+        <input type="file" id="file" name="file" accept="video/*" required />
+        <label>Process every
+          <select id="stride" name="stride">
+            <option value="3">3rd</option>
+            <option value="5" selected>5th</option>
+            <option value="10">10th</option>
+          </select>
+          frame
+        </label>
+        <button type="submit" id="upload-btn">Upload &amp; process</button>
+      </form>
+      <p id="upload-msg" class="msg"></p>
+      <p class="hint">Processing runs in the background (the ball detector calls a hosted model once per frame, so a clip takes a few minutes). It'll appear in Jobs below.</p>
+    </section>
+
+    <section class="card">
+      <h2>Jobs</h2>
+      <ul id="jobs" class="jobs"></ul>
+    </section>
+
+    <section class="card hidden" id="result-card">
+      <h2>Result — <span id="result-name"></span></h2>
+      <p id="result-stats" class="stats"></p>
+      <label class="toggle"><input type="checkbox" id="show-path" checked /> Show ball path</label>
+      <div class="video-wrap">
+        <video id="video" controls preload="metadata"></video>
+        <canvas id="overlay"></canvas>
+      </div>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

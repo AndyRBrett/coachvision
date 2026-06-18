@@ -25,3 +25,6 @@ runs/
 .DS_Store
 .idea/
 .vscode/
+
+# Web app job working dirs (uploads + outputs)
+webapp/jobs/
