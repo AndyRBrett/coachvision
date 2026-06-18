@@ -193,6 +193,23 @@ function ballPoints() {
     .map((ev) => ({ t: ev.time_s, x: ev.ball.center[0], y: ev.ball.center[1] }));
 }
 
+// Ball position interpolated to an exact time `now` (between the two nearest
+// samples), so the marker tracks smoothly instead of snapping to the last frame.
+function ballAt(now, pts) {
+  if (!pts.length) return null;
+  let prev = null, next = null;
+  for (const p of pts) {
+    if (p.t <= now) prev = p;
+    else { next = p; break; }
+  }
+  if (prev && next) {
+    const span = next.t - prev.t || 1;
+    const a = (now - prev.t) / span;
+    return { x: prev.x + (next.x - prev.x) * a, y: prev.y + (next.y - prev.y) * a };
+  }
+  return prev || next;
+}
+
 function currentEvent() {
   if (!events || !events.length) return null;
   const now = video.currentTime;
@@ -225,25 +242,27 @@ function drawOverlay() {
     }
   }
 
-  // Full ball trajectory line (toggle).
   const pts = ballPoints();
+  const now = video.currentTime;
+
+  // Ball path as a trailing "comet" — only the recent stretch up to now, so it
+  // follows the ball instead of drawing the whole rally as a static tangle.
   if ($("#show-path").checked && pts.length >= 2) {
-    ctx.lineWidth = 2.5;
-    ctx.strokeStyle = "rgba(255, 170, 0, 0.85)";
-    ctx.beginPath();
-    pts.forEach((p, i) => {
-      const x = p.x * sx, y = p.y * sy;
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-    });
-    ctx.stroke();
+    const TRAIL_S = 1.5;
+    const seg = pts.filter((p) => p.t >= now - TRAIL_S && p.t <= now);
+    for (let i = 1; i < seg.length; i++) {
+      const a = i / seg.length;  // fade older segments
+      ctx.strokeStyle = `rgba(255, 170, 0, ${0.2 + 0.8 * a})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(seg[i - 1].x * sx, seg[i - 1].y * sy);
+      ctx.lineTo(seg[i].x * sx, seg[i].y * sy);
+      ctx.stroke();
+    }
   }
 
-  // Ball at the current frame (prefer the exact detection, else nearest path point).
-  let ball = ev && ev.ball ? { x: ev.ball.center[0], y: ev.ball.center[1] } : null;
-  if (!ball) {
-    const now = video.currentTime;
-    for (const p of pts) { if (p.t <= now) ball = p; else break; }
-  }
+  // Ball marker, interpolated to the exact current time (smooth, no lag).
+  const ball = ballAt(now, pts);
   if (ball) {
     ctx.beginPath();
     ctx.arc(ball.x * sx, ball.y * sy, 8, 0, Math.PI * 2);
