@@ -23,6 +23,24 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _days_since(last_footage_at, now: datetime):
+    """Whole days between last_footage_at (ISO-8601) and now, or None if never.
+
+    Returns None when no footage has ever been ingested (last_footage_at is
+    null) or when the timestamp can't be parsed, so the overseer never sees a
+    fabricated age.
+    """
+    if not last_footage_at:
+        return None
+    try:
+        then = datetime.fromisoformat(last_footage_at.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if then.tzinfo is None:
+        then = then.replace(tzinfo=timezone.utc)
+    return (now - then).days
+
+
 def load_results() -> dict:
     """Read the pipeline's results JSON, or {} if none exists (idle week)."""
     path = os.environ.get("VOLLEYBALL_RESULTS_PATH", DEFAULT_RESULTS_PATH)
@@ -40,14 +58,25 @@ def build_status(results: dict) -> dict:
     (detection_rate, model_version) are omitted when the pipeline didn't
     produce them rather than reported as fabricated values.
     """
+    now = datetime.now(timezone.utc)
+    now_iso = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    last_footage_at = results.get("last_footage_at")
     status = {
-        "generated_at": _utc_now_iso(),
+        "generated_at": now_iso,
+        # Heartbeat: written on EVERY run regardless of footage. Lets the
+        # overseer distinguish "pipeline ran, no new footage" (last_run_at
+        # recent, footage_processed 0) from "pipeline didn't run at all"
+        # (last_run_at stale), which otherwise look identical.
+        "last_run_at": now_iso,
         "footage_processed": results.get("footage_processed", 0),
         # Distinguish "no new footage" (idle, fine) from "footage uploaded but
         # 0 frames came out" (broken ingest). last_footage_at is null when no
         # footage has ever been ingested; expected_frames > actual_frames flags
         # a stuck/failed run that would otherwise look identical to an idle week.
-        "last_footage_at": results.get("last_footage_at"),
+        "last_footage_at": last_footage_at,
+        # Whole days since the most recent footage was ingested, or null if
+        # none ever has been. Lets the overseer flag prolonged idleness.
+        "days_since_last_footage": _days_since(last_footage_at, now),
         "expected_frames": results.get("expected_frames", 0),
         "actual_frames": results.get("actual_frames", results.get("frames_processed", 0)),
         "failed_frames": results.get("failed_frames", 0),

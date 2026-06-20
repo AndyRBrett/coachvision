@@ -1,10 +1,12 @@
 {
   "actual_frames": 0,
+  "days_since_last_footage": null,
   "errors": [],
   "expected_frames": 0,
   "failed_frames": 0,
   "footage_processed": 0,
   "frames_processed": 0,
-  "generated_at": "2026-06-20T01:32:55Z",
-  "last_footage_at": null
+  "generated_at": "2026-06-20T13:23:30Z",
+  "last_footage_at": null,
+  "last_run_at": "2026-06-20T13:23:30Z"
 }
