@@ -43,6 +43,13 @@ def build_status(results: dict) -> dict:
     status = {
         "generated_at": _utc_now_iso(),
         "footage_processed": results.get("footage_processed", 0),
+        # Distinguish "no new footage" (idle, fine) from "footage uploaded but
+        # 0 frames came out" (broken ingest). last_footage_at is null when no
+        # footage has ever been ingested; expected_frames > actual_frames flags
+        # a stuck/failed run that would otherwise look identical to an idle week.
+        "last_footage_at": results.get("last_footage_at"),
+        "expected_frames": results.get("expected_frames", 0),
+        "actual_frames": results.get("actual_frames", results.get("frames_processed", 0)),
         "failed_frames": results.get("failed_frames", 0),
         "frames_processed": results.get("frames_processed", 0),
         "errors": results.get("errors", []),

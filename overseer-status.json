@@ -1,7 +1,10 @@
 {
+  "actual_frames": 0,
   "errors": [],
+  "expected_frames": 0,
   "failed_frames": 0,
   "footage_processed": 0,
   "frames_processed": 0,
-  "generated_at": "2026-06-20T01:15:40Z"
+  "generated_at": "2026-06-20T01:32:55Z",
+  "last_footage_at": null
 }
