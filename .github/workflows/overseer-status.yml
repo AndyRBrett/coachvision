@@ -1,0 +1,36 @@
+name: overseer-status
+
+# Publish overseer-status.json on every run so the Project Overseer can tell
+# "idle" from "broken". Runs weekly and on demand; commits the file when it changes.
+on:
+  schedule:
+    - cron: "0 6 * * 1"  # Mondays 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  write-status:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Write overseer status
+        run: python write_status.py
+
+      - name: Commit overseer-status.json if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add overseer-status.json
+          if git diff --cached --quiet; then
+            echo "No change to overseer-status.json"
+          else
+            git commit -m "chore: update overseer-status.json"
+            git push
+          fi
