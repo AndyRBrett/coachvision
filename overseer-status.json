@@ -6,7 +6,11 @@
   "failed_frames": 0,
   "footage_processed": 0,
   "frames_processed": 0,
-  "generated_at": "2026-06-20T13:23:30Z",
+  "generated_at": "2026-06-22T00:23:24Z",
+  "idle_threshold_days": 14,
   "last_footage_at": null,
-  "last_run_at": "2026-06-20T13:23:30Z"
+  "last_run_at": "2026-06-22T00:23:24Z",
+  "needs_footage": true,
+  "nudge": "No footage has ever been ingested -- drop clips in the watched folder to start.",
+  "pending_footage": 0
 }

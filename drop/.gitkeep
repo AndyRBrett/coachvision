@@ -1,0 +1,3 @@
+# Watched ingestion folder (Overseer #8). Drop match footage here (.mp4/.mov/...)
+# and the next pipeline run will auto-detect and enqueue it. Footage itself is
+# gitignored; this file just keeps the folder in the repo.

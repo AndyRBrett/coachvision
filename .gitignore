@@ -1,2 +1,12 @@
 __pycache__/
 *.pyc
+
+# Ingested footage is large/private -- keep it out of git (the folder is kept
+# via drop/.gitkeep). Ingest state/queue JSON ARE committed so "seen" state
+# persists across fresh CI checkouts.
+drop/*
+!drop/.gitkeep
+
+# Rendered highlight clips are large; the manifest (highlights/manifest.json)
+# is the dashboard artifact and may be committed if desired.
+highlights/*.mp4

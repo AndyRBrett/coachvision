@@ -16,6 +16,9 @@ from datetime import datetime, timezone
 
 STATUS_PATH = "overseer-status.json"
 DEFAULT_RESULTS_PATH = "results/metrics.json"
+DEFAULT_QUEUE_PATH = "ingest_queue.json"
+# Days of idleness after which the overseer should be nudged to feed footage.
+DEFAULT_IDLE_THRESHOLD_DAYS = 14
 
 
 def _utc_now_iso() -> str:
@@ -51,7 +54,45 @@ def load_results() -> dict:
         return {}
 
 
-def build_status(results: dict) -> dict:
+def load_pending_footage() -> int:
+    """Count clips waiting in the ingest queue (0 when none/unconfigured).
+
+    The queue is produced by ingest_watch.run_scan; surfacing its depth lets the
+    overseer distinguish "idle because nothing was dropped" from "footage was
+    dropped but the pipeline hasn't consumed it yet" (a real stall).
+    """
+    path = os.environ.get("VOLLEYBALL_INGEST_QUEUE", DEFAULT_QUEUE_PATH)
+    try:
+        with open(path) as fh:
+            return len(json.load(fh).get("pending", []))
+    except (FileNotFoundError, ValueError):
+        return 0
+
+
+def _idle_threshold_days() -> int:
+    try:
+        return int(os.environ.get("VOLLEYBALL_IDLE_THRESHOLD_DAYS", DEFAULT_IDLE_THRESHOLD_DAYS))
+    except ValueError:
+        return DEFAULT_IDLE_THRESHOLD_DAYS
+
+
+def build_nudge(days_since, threshold, pending):
+    """Return a human-readable idle nudge, or None when footage is flowing.
+
+    Fires when footage has never been ingested, or when the last ingest is older
+    than ``threshold`` days. If clips are already queued, the nudge points at the
+    stalled queue instead of asking for more footage.
+    """
+    if pending > 0 and (days_since is None or days_since > threshold):
+        return f"{pending} clip(s) queued but unprocessed -- pipeline may be stalled."
+    if days_since is None:
+        return "No footage has ever been ingested -- drop clips in the watched folder to start."
+    if days_since > threshold:
+        return f"No new footage in {days_since} days (threshold {threshold}) -- pipeline is idle."
+    return None
+
+
+def build_status(results: dict, pending_footage: int = 0) -> dict:
     """Map pipeline results onto the overseer status schema.
 
     Always-emitted fields default to a healthy-idle record. Optional fields
@@ -84,6 +125,17 @@ def build_status(results: dict) -> dict:
         "errors": results.get("errors", []),
     }
 
+    # Idle-footage nudge (Overseer #8): surface prolonged idleness and any
+    # footage that was dropped but never consumed, so "works but unused" is
+    # visible rather than silently passing as healthy.
+    threshold = _idle_threshold_days()
+    days_since = status["days_since_last_footage"]
+    nudge = build_nudge(days_since, threshold, pending_footage)
+    status["idle_threshold_days"] = threshold
+    status["pending_footage"] = pending_footage
+    status["needs_footage"] = nudge is not None
+    status["nudge"] = nudge
+
     detection_rate = results.get("detection_rate")
     if detection_rate is not None:
         status["detection_rate"] = detection_rate
@@ -96,7 +148,7 @@ def build_status(results: dict) -> dict:
 
 
 def main() -> None:
-    status = build_status(load_results())
+    status = build_status(load_results(), pending_footage=load_pending_footage())
     with open(STATUS_PATH, "w") as fh:
         json.dump(status, fh, indent=2, sort_keys=True)
         fh.write("\n")

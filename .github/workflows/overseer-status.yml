@@ -20,17 +20,23 @@ jobs:
         with:
           python-version: "3.x"
 
+      # Auto-detect new footage in the watched drop folder and enqueue it
+      # (Overseer #8). VOLLEYBALL_DROP_DIR can point at a synced cloud bucket /
+      # local dir; a missing folder is treated as "idle", not an error.
+      - name: Scan drop folder for new footage
+        run: python ingest_watch.py
+
       - name: Write overseer status
         run: python write_status.py
 
-      - name: Commit overseer-status.json if changed
+      - name: Commit status + ingest state if changed
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add overseer-status.json
+          git add overseer-status.json ingest_state.json ingest_queue.json
           if git diff --cached --quiet; then
-            echo "No change to overseer-status.json"
+            echo "No change to status or ingest state"
           else
-            git commit -m "chore: update overseer-status.json"
+            git commit -m "chore: update overseer status and ingest state"
             git push
           fi
