@@ -142,6 +142,54 @@ the manifest but only executed with `--render` when ffmpeg is installed, so the
 core logic stays pure and testable. See `examples/sample_tracking.json` for the
 expected tracking-input schema.
 
+## Optional: real-footage detection via supervision (Ultralytics YOLO + ByteTrack)
+
+The default `detect.py` finds the subject as the *brightest blob* — enough to
+prove the pipeline on the synthetic reference clip, but not robust on real gym
+footage (jerseys, lights, and reflections are all brighter than a ball).
+`detect_supervision.py` is the upgrade path: a real object detector
+([Ultralytics YOLO](https://github.com/ultralytics/ultralytics)) whose boxes are
+normalised by [`roboflow/supervision`](https://github.com/roboflow/supervision)
+into `sv.Detections`, given a stable identity by supervision's **ByteTrack**, and
+emitted in the **exact same tracking schema** the rest of the pipeline consumes.
+
+```bash
+pip install supervision ultralytics            # heavy deps, opt-in only
+VOLLEYBALL_DETECTOR=supervision python pipeline.py drop/match.mp4 --events match.events.json
+# or explicitly:
+python pipeline.py drop/match.mp4 --detector supervision
+```
+
+Like the Cosmos tagger, it is **strictly optional and guarded**: the heavy stack
+(`supervision`/`ultralytics`/`torch`/`opencv`) is imported lazily and only when
+the backend is selected. The stdlib geometric detector stays the default, the
+self-test always runs on it, and CI remains dependency-free. Selecting the
+backend without it installed fails fast with a clear install hint.
+
+### Sport-agnostic (volleyball → basketball, golf, karate, …)
+
+Nothing in the backend is volleyball-specific — it tracks a single configurable
+**target class**, so the same pipeline extends to other sports by changing the
+weights and the class name:
+
+| Sport | `VOLLEYBALL_YOLO_MODEL` | `VOLLEYBALL_TARGET_CLASS` |
+| --- | --- | --- |
+| volleyball / basketball / golf | tuned weights, or stock COCO | `sports ball` (or `volleyball`/`basketball`/`golf ball` for tuned weights) |
+| karate / gymnastics | tuned weights, or stock COCO | `person` (track the athlete) |
+
+```bash
+export VOLLEYBALL_DETECTOR=supervision
+export VOLLEYBALL_YOLO_MODEL=yolov8n.pt          # or sport-tuned weights
+export VOLLEYBALL_TARGET_CLASS="person"          # e.g. for karate
+export VOLLEYBALL_YOLO_CONF=0.25                 # min detection confidence
+python pipeline.py drop/kata.mp4 --detector supervision
+```
+
+The tracking schema still calls the per-frame position `ball` for backward
+compatibility — read it generically as "the tracked subject's position".
+(`VOLLEYBALL_BALL_CLASS` is still accepted as a legacy alias for
+`VOLLEYBALL_TARGET_CLASS`.)
+
 ## Optional: NVIDIA Cosmos Reason tagging
 
 In June 2026 NVIDIA open-sourced the **Cosmos 3** family, including **Cosmos
