@@ -14,6 +14,8 @@ recording (see [Switching sports](#switching-sports-volleyball--martial-arts)).
 | File | Purpose |
 | --- | --- |
 | `domains.py` | Sport domains (volleyball / martial arts): detector choice, tag vocabulary, report wording, and segmentation defaults. |
+| `decode_video.py` | ffmpeg bridge: real video (`MP4`/`MOV`/URL) → the gzipped P5/PGM frames the detector reads. CPU-only. |
+| `process_footage.py` | One-shot: decode → pipeline → publish `reports/<clip>/` + `reports/index.json`. Driven by the `process-footage` workflow. |
 | `detect.py` | CV front-end: turns raw clip frames into subject-track tracking data (ball or fighter). |
 | `pipeline.py` | Runs the full pipeline (detect → highlights → coaching) and the self-test. |
 | `coaching.py` | Per-clip coaching report: segment length, subject speed, action-zone heatmap (worded per domain — rally/ball/contact for volleyball, exchange/fighter/strike for martial arts). |
@@ -67,6 +69,49 @@ The pipeline's machine-readable keys (`segment_count`, `frames_processed`, …) 
 stable across domains so the Project Overseer keeps working; only the words in
 the human-facing coaching summary change (exchanges/strikes/mat vs.
 rallies/contacts/court).
+
+## Run it on GitHub — no Mac, no GPU
+
+The CV here is pure Python (no `torch`/`opencv`/CUDA), so the whole thing runs on
+GitHub's free Linux runners. The only piece that touches real video is decoding,
+and that's plain **ffmpeg** (CPU, preinstalled on `ubuntu-latest`) — no GPU
+anywhere. Two new pieces make this a one-button job:
+
+| File | Purpose |
+| --- | --- |
+| `decode_video.py` | ffmpeg → gzipped P5/PGM frames (`MP4`/`MOV`/… → what `detect.py` reads). Samples to a low fps/width since the detector is O(pixels). |
+| `process_footage.py` | Decode → run the pipeline for a domain → publish `reports/<clip>/` and upsert `reports/index.json`. |
+
+**Trigger it** from the **Actions tab → `process-footage` → "Run workflow"** (the
+GitHub mobile app and the REST API can fire the same `workflow_dispatch`):
+
+- `domain` — `martial_arts` (default) or `volleyball`.
+- `clip_path` — a video already committed under `drop/` (e.g. `drop/spar.mp4`), **or**
+- `clip_url` — a link the runner downloads (handy for a phone upload / cloud link).
+- `fps` — sample rate (default `10`).
+
+It commits browsable outputs back to the repo:
+
+```
+reports/
+  index.json                     # catalog of every processed clip (PWA-friendly)
+  <clip>/coaching/report.json    # machine-readable coaching report
+  <clip>/coaching/summary.txt    # the coach-facing summary
+  <clip>/highlights/manifest.json
+```
+
+`reports/index.json` is a flat list of clips with relative paths to each
+artifact — exactly what a **static phone PWA** (served from GitHub Pages or the
+raw repo) can fetch to render a session gallery, with no server to run. The same
+`workflow_dispatch` is the PWA's "analyze this clip" button.
+
+> **Detection quality, honestly.** v1 finds *where the action is*: motion-energy
+> segments a fixed-camera recording into exchanges and reports their length and
+> fighter speed. It does **not** yet classify individual strikes (jab vs. kick) —
+> segments come back `untagged` unless you supply an events sidecar or enable the
+> optional [Cosmos Reason](#optional-nvidia-cosmos-reason-tagging) VLM tagging
+> (which also runs off-box behind an HTTP endpoint, so still no local GPU). Works
+> best with a steady camera; a panning phone adds background motion.
 
 ## End-to-end pipeline + self-test
 
