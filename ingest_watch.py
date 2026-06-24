@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Drop-folder auto-detect for the volleyball pipeline (Overseer issue #8).
+"""Drop-folder auto-detect for the coachvision pipeline (Overseer issue #8).
 
 The pipeline was fully idle -- a capable CV system that nothing was feeding.
 This module closes the gap between "pipeline works" and "pipeline gets used" by
@@ -13,9 +13,9 @@ depth and an idle nudge so prolonged idleness is visible instead of silent.
 
 Environment variables
 ---------------------
-VOLLEYBALL_DROP_DIR       Folder to watch for new footage (default: drop).
-VOLLEYBALL_INGEST_STATE   Seen-state manifest path (default: ingest_state.json).
-VOLLEYBALL_INGEST_QUEUE   Pending-clip queue path (default: ingest_queue.json).
+COACHVISION_DROP_DIR       Folder to watch for new footage (default: drop).
+COACHVISION_INGEST_STATE   Seen-state manifest path (default: ingest_state.json).
+COACHVISION_INGEST_QUEUE   Pending-clip queue path (default: ingest_queue.json).
 """
 import json
 import os
@@ -106,9 +106,9 @@ def run_scan(
     used: a clip first seen is recorded but only enqueued once a later scan sees
     the same size, so files copied slowly aren't processed half-written.
     """
-    drop_dir = drop_dir or os.environ.get("VOLLEYBALL_DROP_DIR", DEFAULT_DROP_DIR)
-    state_path = state_path or os.environ.get("VOLLEYBALL_INGEST_STATE", DEFAULT_STATE_PATH)
-    queue_path = queue_path or os.environ.get("VOLLEYBALL_INGEST_QUEUE", DEFAULT_QUEUE_PATH)
+    drop_dir = drop_dir or os.environ.get("COACHVISION_DROP_DIR", DEFAULT_DROP_DIR)
+    state_path = state_path or os.environ.get("COACHVISION_INGEST_STATE", DEFAULT_STATE_PATH)
+    queue_path = queue_path or os.environ.get("COACHVISION_INGEST_QUEUE", DEFAULT_QUEUE_PATH)
     now_iso = now_iso or _utc_now_iso()
 
     seen = load_json(state_path, {}).get("clips", {})

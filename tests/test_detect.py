@@ -33,18 +33,18 @@ class TestDetectBall(unittest.TestCase):
         block = [(x, y) for x in range(4, 7) for y in range(3, 6)]
         raster = _pgm_frame(10, 8, block)
         _, _, frames = self._load_single(raster)
-        ball = detect.detect_ball(frames[0], 10, 8)
+        ball = detect.detect_blob(frames[0], 10, 8)
         self.assertEqual(ball, [5.0, 4.0])
 
     def test_empty_frame_is_none(self):
         raster = _pgm_frame(10, 8, [])
         _, _, frames = self._load_single(raster)
-        self.assertIsNone(detect.detect_ball(frames[0], 10, 8))
+        self.assertIsNone(detect.detect_blob(frames[0], 10, 8))
 
     def test_below_min_pixels_is_none(self):
         raster = _pgm_frame(10, 8, [(2, 2)])  # 1 bright pixel < default min 3
         _, _, frames = self._load_single(raster)
-        self.assertIsNone(detect.detect_ball(frames[0], 10, 8))
+        self.assertIsNone(detect.detect_blob(frames[0], 10, 8))
 
     def _load_single(self, raster):
         path = _write_clip([raster])

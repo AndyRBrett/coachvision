@@ -7,7 +7,7 @@ the file is written on EVERY run -- including weeks where no footage was
 processed (footage_processed: 0).
 
 Metrics are sourced from the pipeline's results JSON, whose path is given by
-the VOLLEYBALL_RESULTS_PATH environment variable (default: results/metrics.json).
+the COACHVISION_RESULTS_PATH environment variable (default: results/metrics.json).
 Any metric the pipeline did not produce is omitted rather than invented.
 """
 import json
@@ -47,7 +47,7 @@ def _days_since(last_footage_at, now: datetime):
 
 def load_results() -> dict:
     """Read the pipeline's results JSON, or {} if none exists (idle week)."""
-    path = os.environ.get("VOLLEYBALL_RESULTS_PATH", DEFAULT_RESULTS_PATH)
+    path = os.environ.get("COACHVISION_RESULTS_PATH", DEFAULT_RESULTS_PATH)
     try:
         with open(path) as fh:
             return json.load(fh)
@@ -62,7 +62,7 @@ def load_pending_footage() -> int:
     overseer distinguish "idle because nothing was dropped" from "footage was
     dropped but the pipeline hasn't consumed it yet" (a real stall).
     """
-    path = os.environ.get("VOLLEYBALL_INGEST_QUEUE", DEFAULT_QUEUE_PATH)
+    path = os.environ.get("COACHVISION_INGEST_QUEUE", DEFAULT_QUEUE_PATH)
     try:
         with open(path) as fh:
             return len(json.load(fh).get("pending", []))
@@ -79,7 +79,7 @@ def load_selftest() -> dict:
     from "broken" (self-test failing/absent) -- the exact distinction that was
     impossible while the pipeline sat at 0 frames with no proof it worked.
     """
-    path = os.environ.get("VOLLEYBALL_SELFTEST_PATH", DEFAULT_SELFTEST_PATH)
+    path = os.environ.get("COACHVISION_SELFTEST_PATH", DEFAULT_SELFTEST_PATH)
     try:
         with open(path) as fh:
             return json.load(fh)
@@ -89,7 +89,7 @@ def load_selftest() -> dict:
 
 def _idle_threshold_days() -> int:
     try:
-        return int(os.environ.get("VOLLEYBALL_IDLE_THRESHOLD_DAYS", DEFAULT_IDLE_THRESHOLD_DAYS))
+        return int(os.environ.get("COACHVISION_IDLE_THRESHOLD_DAYS", DEFAULT_IDLE_THRESHOLD_DAYS))
     except ValueError:
         return DEFAULT_IDLE_THRESHOLD_DAYS
 
@@ -119,7 +119,7 @@ def build_selftest_summary(selftest: dict) -> dict:
     if not selftest:
         return {"ok": False, "verified_at": None}
     summary = {"ok": bool(selftest.get("ok"))}
-    for key in ("verified_at", "frames_processed", "rally_count", "clip"):
+    for key in ("verified_at", "frames_processed", "segment_count", "clip", "domain"):
         if key in selftest:
             summary[key] = selftest[key]
     return summary
@@ -157,6 +157,11 @@ def build_status(results: dict, pending_footage: int = 0, selftest: dict = None)
         "frames_processed": results.get("frames_processed", 0),
         "errors": results.get("errors", []),
     }
+
+    # Which sport the pipeline is currently configured for, when the metrics
+    # record it. Omitted (not invented) for legacy results that predate domains.
+    if results.get("domain") is not None:
+        status["domain"] = results["domain"]
 
     # Idle-footage nudge (Overseer #8): surface prolonged idleness and any
     # footage that was dropped but never consumed, so "works but unused" is

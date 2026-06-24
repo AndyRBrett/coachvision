@@ -69,13 +69,13 @@ class TestSelfTestSummary(unittest.TestCase):
             "ok": True,
             "verified_at": "2026-06-22T06:00:00Z",
             "frames_processed": 104,
-            "rally_count": 3,
+            "segment_count": 3,
             "clip": "fixtures/reference_clip.pgm.gz",
         }
         summary = write_status.build_selftest_summary(record)
         self.assertTrue(summary["ok"])
         self.assertEqual(summary["frames_processed"], 104)
-        self.assertEqual(summary["rally_count"], 3)
+        self.assertEqual(summary["segment_count"], 3)
 
     def test_status_includes_pipeline_selftest(self):
         status = write_status.build_status({}, selftest={"ok": True, "frames_processed": 104})

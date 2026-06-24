@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="coachvision">
+  <rect width="512" height="512" rx="96" fill="#0f1720"/>
+  <!-- safe zone keeps art within central 80% for maskable icons -->
+  <g fill="none" stroke="#2dd4bf" stroke-width="26" stroke-linecap="round">
+    <!-- motion arc: the tracked subject sweeping across -->
+    <path d="M120 300 C 200 180, 312 180, 392 300" stroke="#38bdf8"/>
+    <circle cx="120" cy="300" r="12" fill="#38bdf8" stroke="none"/>
+    <circle cx="392" cy="300" r="12" fill="#38bdf8" stroke="none"/>
+  </g>
+  <!-- subject -->
+  <circle cx="256" cy="206" r="40" fill="#2dd4bf"/>
+  <!-- baseline / surface -->
+  <line x1="120" y1="372" x2="392" y2="372" stroke="#2b3a4d" stroke-width="20" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,76 @@
+import json
+import os
+import shutil
+import sys
+import tempfile
+import unittest
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import decode_video  # noqa: E402
+import detect  # noqa: E402
+import process_footage  # noqa: E402
+
+HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+class TestSlugify(unittest.TestCase):
+    def test_slug(self):
+        self.assertEqual(process_footage.slugify("drop/Spar Session 2.MOV"), "spar-session-2")
+        self.assertEqual(process_footage.slugify("clip.mp4"), "clip")
+
+
+class TestProcessEndToEnd(unittest.TestCase):
+    """Exercise decode -> pipeline -> reports/index with the ffmpeg step faked.
+
+    A committed fixture clip stands in for the decoder's output, so the real
+    pipeline runs against real frames without needing ffmpeg in the test env.
+    """
+
+    def setUp(self):
+        self._orig = decode_video.decode_to_pgm_gz
+
+    def tearDown(self):
+        decode_video.decode_to_pgm_gz = self._orig
+
+    def _fake_decode(self, fixture):
+        def fake(src, out_path, fps=10.0, width=160):
+            shutil.copyfile(os.path.join(HERE, "fixtures", fixture), out_path)
+            w, h, frames = detect.load_pgm_frames(out_path)
+            return {"out_path": out_path, "frame_count": len(frames),
+                    "width": w, "height": h, "fps": fps}
+        return fake
+
+    def _run(self, domain, fixture, label):
+        decode_video.decode_to_pgm_gz = self._fake_decode(fixture)
+        with tempfile.TemporaryDirectory() as reports:
+            entry = process_footage.process(
+                os.path.join(reports, "src_placeholder"),
+                domain=domain, reports_dir=reports, source_label=label,
+            )
+            clip_dir = os.path.join(reports, entry["id"])
+            self.assertTrue(os.path.isfile(os.path.join(clip_dir, "coaching", "report.json")))
+            self.assertTrue(os.path.isfile(os.path.join(clip_dir, "coaching", "summary.txt")))
+            self.assertTrue(os.path.isfile(os.path.join(clip_dir, "highlights", "manifest.json")))
+            # Decoded frames are intermediate and must not be left behind.
+            self.assertFalse(os.path.exists(os.path.join(clip_dir, f"{entry['id']}.pgm.gz")))
+            # The catalog the PWA reads has this clip.
+            with open(os.path.join(reports, "index.json")) as fh:
+                index = json.load(fh)
+            ids = [c["id"] for c in index["clips"]]
+            self.assertIn(entry["id"], ids)
+            return entry
+
+    def test_martial_arts(self):
+        entry = self._run("martial_arts", "martialarts_clip.pgm.gz", "spar_session.mp4")
+        self.assertEqual(entry["domain"], "martial_arts")
+        self.assertGreaterEqual(entry["segment_count"], 1)
+
+    def test_volleyball(self):
+        entry = self._run("volleyball", "reference_clip.pgm.gz", "game1.mp4")
+        self.assertEqual(entry["domain"], "volleyball")
+        self.assertGreaterEqual(entry["segment_count"], 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f1720" />
+  <title>coachvision</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icon.svg" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><img src="icon.svg" alt="" width="26" height="26" /> coachvision</div>
+    <span id="repoTag" class="repo-tag"></span>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab is-active" data-view="sessions">Sessions</button>
+    <button class="tab" data-view="analyze">Analyze</button>
+    <button class="tab" data-view="settings">Settings</button>
+  </nav>
+
+  <main>
+    <!-- Sessions -->
+    <section id="view-sessions" class="view is-active">
+      <div class="row">
+        <h2>Sessions</h2>
+        <button id="refreshBtn" class="ghost">Refresh</button>
+      </div>
+      <p id="sessionsMsg" class="msg"></p>
+      <div id="gallery" class="gallery"></div>
+    </section>
+
+    <!-- Analyze -->
+    <section id="view-analyze" class="view">
+      <h2>Analyze a clip</h2>
+      <p class="hint">Fires the <code>process-footage</code> workflow on GitHub (CPU only,
+        no GPU). Needs a token with Actions write — see Settings.</p>
+      <label>Sport
+        <select id="domain">
+          <option value="martial_arts">Martial arts</option>
+          <option value="volleyball">Volleyball</option>
+        </select>
+      </label>
+      <label>Video URL <span class="sub">(phone upload / cloud link the runner downloads)</span>
+        <input id="clipUrl" type="url" inputmode="url" placeholder="https://…/spar.mp4" />
+      </label>
+      <div class="or">— or —</div>
+      <label>Path in repo <span class="sub">(a video already committed under drop/)</span>
+        <input id="clipPath" type="text" placeholder="drop/spar.mp4" />
+      </label>
+      <label>Sample fps
+        <input id="fps" type="number" value="10" min="1" max="30" />
+      </label>
+      <button id="analyzeBtn" class="primary">Run analysis</button>
+      <p id="analyzeMsg" class="msg"></p>
+      <div class="row"><h3>Recent runs</h3><button id="runsBtn" class="ghost">Refresh</button></div>
+      <div id="runs" class="runs"></div>
+    </section>
+
+    <!-- Settings -->
+    <section id="view-settings" class="view">
+      <h2>Settings</h2>
+      <p class="hint">Stored only in this browser (localStorage). Reads use the GitHub
+        contents API; the analyze button needs a token.</p>
+      <label>Owner <input id="owner" type="text" placeholder="AndyRBrett" /></label>
+      <label>Repo <input id="repo" type="text" placeholder="volleyball" /></label>
+      <label>Branch <input id="branch" type="text" placeholder="main" /></label>
+      <label>GitHub token <span class="sub">(fine-grained: Actions RW + Contents R; or classic <code>repo</code>+<code>workflow</code>)</span>
+        <input id="token" type="password" placeholder="github_pat_… (optional for public reads)" />
+      </label>
+      <button id="saveBtn" class="primary">Save</button>
+      <button id="testBtn" class="ghost">Test connection</button>
+      <p id="settingsMsg" class="msg"></p>
+    </section>
+  </main>
+
+  <!-- Clip detail dialog -->
+  <dialog id="clipDialog">
+    <div class="dialog-head">
+      <strong id="dlgTitle"></strong>
+      <button id="dlgClose" class="ghost">Close</button>
+    </div>
+    <pre id="dlgBody" class="summary"></pre>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>

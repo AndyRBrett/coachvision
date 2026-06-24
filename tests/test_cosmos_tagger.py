@@ -42,13 +42,13 @@ class TestMergeTags(unittest.TestCase):
 
 class TestConfiguration(unittest.TestCase):
     def setUp(self):
-        self._saved = os.environ.pop("VOLLEYBALL_COSMOS_NIM_URL", None)
+        self._saved = os.environ.pop("COACHVISION_COSMOS_NIM_URL", None)
 
     def tearDown(self):
         if self._saved is not None:
-            os.environ["VOLLEYBALL_COSMOS_NIM_URL"] = self._saved
+            os.environ["COACHVISION_COSMOS_NIM_URL"] = self._saved
         else:
-            os.environ.pop("VOLLEYBALL_COSMOS_NIM_URL", None)
+            os.environ.pop("COACHVISION_COSMOS_NIM_URL", None)
 
     def test_not_configured(self):
         self.assertFalse(cosmos_tagger.is_configured())
@@ -56,7 +56,7 @@ class TestConfiguration(unittest.TestCase):
             cosmos_tagger.make_enricher()
 
     def test_configured(self):
-        os.environ["VOLLEYBALL_COSMOS_NIM_URL"] = "http://localhost:8000/v1/chat/completions"
+        os.environ["COACHVISION_COSMOS_NIM_URL"] = "http://localhost:8000/v1/chat/completions"
         self.assertTrue(cosmos_tagger.is_configured())
         enricher = cosmos_tagger.make_enricher()
         self.assertTrue(callable(enricher))
@@ -67,13 +67,13 @@ class TestConfiguration(unittest.TestCase):
 
 class TestEnricherGraceful(unittest.TestCase):
     def test_enricher_returns_base_on_failure(self):
-        os.environ["VOLLEYBALL_COSMOS_NIM_URL"] = "http://127.0.0.1:9/v1/chat/completions"
+        os.environ["COACHVISION_COSMOS_NIM_URL"] = "http://127.0.0.1:9/v1/chat/completions"
         try:
             enrich = cosmos_tagger.make_enricher()
             # Endpoint is unreachable -> falls back to base tags, never raises.
             self.assertEqual(enrich("x.mp4", 1.0, 2.0, ["serve"]), ["serve"])
         finally:
-            os.environ.pop("VOLLEYBALL_COSMOS_NIM_URL", None)
+            os.environ.pop("COACHVISION_COSMOS_NIM_URL", None)
 
 
 if __name__ == "__main__":

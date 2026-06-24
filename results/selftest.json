@@ -1,8 +1,9 @@
 {
   "clip": "fixtures/reference_clip.pgm.gz",
   "detected_frames": 58,
+  "domain": "volleyball",
   "frames_processed": 104,
   "ok": true,
-  "rally_count": 3,
-  "verified_at": "2026-06-22T22:18:48Z"
+  "segment_count": 3,
+  "verified_at": "2026-06-24T22:46:28Z"
 }

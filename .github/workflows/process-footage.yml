@@ -1,0 +1,77 @@
+name: process-footage
+
+# Run the whole pipeline on GitHub -- no Mac, no GPU. Trigger it by hand from the
+# Actions tab (or the GitHub mobile app, or the API / a future PWA) via the "Run
+# workflow" button. Point it at footage either already committed under drop/ or
+# at a URL it should download, pick the sport, and it publishes browsable
+# coaching reports under reports/<clip>/ and updates reports/index.json.
+on:
+  workflow_dispatch:
+    inputs:
+      domain:
+        description: "Sport domain"
+        type: choice
+        default: martial_arts
+        options:
+          - martial_arts
+          - volleyball
+      clip_path:
+        description: "Path to a video already in the repo (e.g. drop/spar.mp4)"
+        type: string
+        required: false
+      clip_url:
+        description: "OR a URL to download the video from (phone upload / cloud link)"
+        type: string
+        required: false
+      fps:
+        description: "Frames per second to sample"
+        type: string
+        default: "10"
+
+permissions:
+  contents: write
+
+jobs:
+  process:
+    runs-on: ubuntu-latest   # ffmpeg is preinstalled here; software decode, no GPU
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Show ffmpeg (sanity)
+        run: ffmpeg -version | head -1
+
+      - name: Decode + analyze footage
+        env:
+          CLIP_PATH: ${{ inputs.clip_path }}
+          CLIP_URL: ${{ inputs.clip_url }}
+          DOMAIN: ${{ inputs.domain }}
+          FPS: ${{ inputs.fps }}
+        run: |
+          set -euo pipefail
+          if [ -n "${CLIP_URL}" ]; then
+            python process_footage.py --url "${CLIP_URL}" --domain "${DOMAIN}" --fps "${FPS}"
+          elif [ -n "${CLIP_PATH}" ]; then
+            python process_footage.py "${CLIP_PATH}" --domain "${DOMAIN}" --fps "${FPS}"
+          else
+            echo "Provide clip_path or clip_url" >&2
+            exit 1
+          fi
+
+      - name: Refresh overseer status
+        run: python write_status.py
+
+      - name: Commit reports if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add reports overseer-status.json
+          if git diff --cached --quiet; then
+            echo "No new reports"
+          else
+            git commit -m "reports: process footage (${{ inputs.domain }})"
+            git push
+          fi

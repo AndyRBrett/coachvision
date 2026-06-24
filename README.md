@@ -1,21 +1,145 @@
-# volleyball
+# coachvision
 
-A lightweight volleyball computer-vision pipeline with health monitoring for the
+A lightweight computer-vision coaching pipeline with health monitoring for the
 **Project Overseer** (a weekly automated reviewer that reads
 `overseer-status.json` to tell whether the pipeline is *healthy-but-idle* or
 *broken*).
+
+It ships with two interchangeable **sport domains** — **volleyball** and
+**martial arts** — so you can point it at whatever footage you're actually
+recording (see [Switching sports](#switching-sports-volleyball--martial-arts)).
 
 ## Components
 
 | File | Purpose |
 | --- | --- |
-| `detect.py` | CV front-end: turns raw clip frames into ball-track tracking data. |
+| `domains.py` | Sport domains (volleyball / martial arts): detector choice, tag vocabulary, report wording, and segmentation defaults. |
+| `decode_video.py` | ffmpeg bridge: real video (`MP4`/`MOV`/URL) → the gzipped P5/PGM frames the detector reads. CPU-only. |
+| `process_footage.py` | One-shot: decode → pipeline → publish `reports/<clip>/` + `reports/index.json`. Driven by the `process-footage` workflow. |
+| `detect.py` | CV front-end: turns raw clip frames into subject-track tracking data (ball or fighter). |
 | `pipeline.py` | Runs the full pipeline (detect → highlights → coaching) and the self-test. |
-| `coaching.py` | Per-clip coaching report: rally length, ball speed, contact-zone heatmap. |
-| `highlights.py` | Segments tracking data into rallies and emits tagged highlight clips. |
+| `coaching.py` | Per-clip coaching report: segment length, subject speed, action-zone heatmap (worded per domain — rally/ball/contact for volleyball, exchange/fighter/strike for martial arts). |
+| `highlights.py` | Segments tracking data into plays and emits tagged highlight clips. |
 | `cosmos_tagger.py` | Optional clip tag enrichment via NVIDIA **Cosmos Reason**. |
 | `ingest_watch.py` | Watches a drop folder, auto-detects new footage, and enqueues unseen clips. |
 | `write_status.py` | Publishes `overseer-status.json` (heartbeat + ingest signals + idle nudge + self-test verification). |
+
+## Switching sports (volleyball ⇄ martial arts)
+
+The pipeline is mechanically sport-agnostic: it tracks one **subject point** per
+frame, segments play from gaps in that point's motion, tags each segment from
+timed events, and bins events onto a **surface** grid. A `Domain` (`domains.py`)
+bundles the only things that actually differ between sports:
+
+| | volleyball | martial arts |
+| --- | --- | --- |
+| detector | brightest blob (the ball) | **motion energy** (the moving fighter) |
+| play segment | rally | exchange |
+| subject / surface | ball / court | fighter / mat |
+| action tags | serve, set, attack, block, dig… | jab, cross, hook, kick, knee, takedown, clinch… |
+
+Why a different detector? Martial arts has no high-contrast ball to track, so the
+subject is recovered with **motion-energy temporal segmentation** — thresholding
+the frame-to-frame pixel difference and taking the centroid of what changed. A
+fighter standing still produces no motion and reads as the gap between exchanges,
+the direct analogue of a volleyball going out of play. (Standard dependency-free
+approach; see e.g. [energy-guided temporal segmentation](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7506802/).)
+
+Select the domain with the `--domain` flag or the `COACHVISION_DOMAIN` env var
+(default `volleyball`, preserving prior behaviour and the overseer's status
+contract):
+
+```bash
+# Process martial-arts footage end-to-end
+python pipeline.py clip.pgm.gz --events clip.events.json --domain martial_arts
+
+# Or set it once for the whole session (detect.py / highlights.py / coaching.py
+# all read it)
+export COACHVISION_DOMAIN=martial_arts
+python pipeline.py --self-test          # runs the martial-arts reference clip
+```
+
+For the automated weekly workflow, set the repository variable
+`COACHVISION_DOMAIN` (Settings → Secrets and variables → Actions → Variables) to
+`martial_arts` to switch detection, the self-test, and the published status
+without touching code. Each domain bundles its own reference clip
+(`fixtures/`), so the self-test proves *its* detector end-to-end.
+
+The pipeline's machine-readable keys (`segment_count`, `frames_processed`, …) stay
+stable across domains so the Project Overseer keeps working; only the words in
+the human-facing coaching summary change (exchanges/strikes/mat vs.
+rallies/contacts/court).
+
+## Run it on GitHub — no Mac, no GPU
+
+The CV here is pure Python (no `torch`/`opencv`/CUDA), so the whole thing runs on
+GitHub's free Linux runners. The only piece that touches real video is decoding,
+and that's plain **ffmpeg** (CPU, preinstalled on `ubuntu-latest`) — no GPU
+anywhere. Two new pieces make this a one-button job:
+
+| File | Purpose |
+| --- | --- |
+| `decode_video.py` | ffmpeg → gzipped P5/PGM frames (`MP4`/`MOV`/… → what `detect.py` reads). Samples to a low fps/width since the detector is O(pixels). |
+| `process_footage.py` | Decode → run the pipeline for a domain → publish `reports/<clip>/` and upsert `reports/index.json`. |
+
+**Trigger it** from the **Actions tab → `process-footage` → "Run workflow"** (the
+GitHub mobile app and the REST API can fire the same `workflow_dispatch`):
+
+- `domain` — `martial_arts` (default) or `volleyball`.
+- `clip_path` — a video already committed under `drop/` (e.g. `drop/spar.mp4`), **or**
+- `clip_url` — a link the runner downloads (handy for a phone upload / cloud link).
+- `fps` — sample rate (default `10`).
+
+It commits browsable outputs back to the repo:
+
+```
+reports/
+  index.json                     # catalog of every processed clip (PWA-friendly)
+  <clip>/coaching/report.json    # machine-readable coaching report
+  <clip>/coaching/summary.txt    # the coach-facing summary
+  <clip>/highlights/manifest.json
+```
+
+`reports/index.json` is a flat list of clips with relative paths to each
+artifact — exactly what a **static phone PWA** (served from GitHub Pages or the
+raw repo) can fetch to render a session gallery, with no server to run. The same
+`workflow_dispatch` is the PWA's "analyze this clip" button.
+
+> **Detection quality, honestly.** v1 finds *where the action is*: motion-energy
+> segments a fixed-camera recording into exchanges and reports their length and
+> fighter speed. It does **not** yet classify individual strikes (jab vs. kick) —
+> segments come back `untagged` unless you supply an events sidecar or enable the
+> optional [Cosmos Reason](#optional-nvidia-cosmos-reason-tagging) VLM tagging
+> (which also runs off-box behind an HTTP endpoint, so still no local GPU). Works
+> best with a steady camera; a panning phone adds background motion.
+
+## Phone app (PWA)
+
+`docs/` is an installable, offline-capable PWA — a serverless phone interface to
+the whole thing. It has **no backend**: it reads the committed `reports/` via the
+GitHub contents API and starts analyses by firing the `process-footage` workflow
+through the Actions API.
+
+**Deploy it** (once): **Settings → Pages → Source: GitHub Actions**. The
+`pages.yml` workflow then publishes `docs/` on every push to `main`, and the app
+lives at `https://<owner>.github.io/<repo>/` (for this repo,
+`https://andyrbrett.github.io/volleyball/`). Open it on your phone and
+**Add to Home Screen** to install it.
+
+**First run:** open **Settings** in the app and set owner / repo / branch
+(defaults `AndyRBrett` / `volleyball` / `main`) and a GitHub token. Reading
+sessions from a public repo needs no token; the **Analyze** button does. Use a
+fine-grained PAT scoped to this repo with **Actions: Read and write** +
+**Contents: Read**, or a classic token with `repo` + `workflow`. The token is
+stored only in your browser's localStorage.
+
+Three tabs:
+
+- **Sessions** — a gallery from `reports/index.json`; tap a card for its coaching
+  summary (exchanges/strikes, fighter speed, heatmap).
+- **Analyze** — pick a sport, paste a video URL (or a `drop/` path), set fps, and
+  start a run; recent run statuses show inline.
+- **Settings** — repo + token, with a "Test connection" check.
 
 ## End-to-end pipeline + self-test
 
@@ -47,7 +171,8 @@ as `pipeline_selftest` in the overseer status, distinguishing *healthy-but-idle*
 (pipeline verified, just no new footage) from *broken*.
 
 The fixtures live in `fixtures/` and are regenerated with
-`python fixtures/make_reference_clip.py`.
+`python fixtures/make_reference_clip.py` (volleyball) and
+`python fixtures/make_martialarts_clip.py` (martial arts).
 
 ## Auto coaching reports per clip
 
@@ -87,10 +212,10 @@ feeding. `ingest_watch.py` closes that gap:
 
 ```bash
 # Watch a folder (local dir or synced cloud bucket) for new footage
-VOLLEYBALL_DROP_DIR=drop python ingest_watch.py
+COACHVISION_DROP_DIR=drop python ingest_watch.py
 ```
 
-- Recursively scans `VOLLEYBALL_DROP_DIR` (default `drop/`) for video files.
+- Recursively scans `COACHVISION_DROP_DIR` (default `drop/`) for video files.
 - Diffs against a small seen-state manifest (`ingest_state.json`) so each clip is
   enqueued **once**, and only after its size settles across two scans (so a clip
   still being copied isn't processed half-written).
@@ -110,7 +235,7 @@ visible instead of silently passing as healthy:
 ```
 
 The nudge fires when footage has never been ingested, when the last ingest is
-older than `VOLLEYBALL_IDLE_THRESHOLD_DAYS` (default 14), or when clips are
+older than `COACHVISION_IDLE_THRESHOLD_DAYS` (default 14), or when clips are
 queued but unprocessed (a stalled pipeline). The weekly workflow runs the scan
 before writing status.
 
@@ -150,9 +275,9 @@ served as an NVIDIA NIM microservice. `cosmos_tagger.py` can use it to enrich th
 heuristic event-window tags with model-derived coaching tags:
 
 ```bash
-export VOLLEYBALL_COSMOS_NIM_URL="https://integrate.api.nvidia.com/v1/chat/completions"
-export VOLLEYBALL_COSMOS_API_KEY="nvapi-..."           # for hosted NIM
-export VOLLEYBALL_COSMOS_MODEL="nvidia/cosmos-reason-3" # optional override
+export COACHVISION_COSMOS_NIM_URL="https://integrate.api.nvidia.com/v1/chat/completions"
+export COACHVISION_COSMOS_API_KEY="nvapi-..."           # for hosted NIM
+export COACHVISION_COSMOS_MODEL="nvidia/cosmos-reason-3" # optional override
 python highlights.py examples/sample_tracking.json --cosmos
 ```
 

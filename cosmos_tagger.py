@@ -20,57 +20,61 @@ Design constraints
 
 Environment variables
 ---------------------
-VOLLEYBALL_COSMOS_NIM_URL  Cosmos Reason NIM chat-completions endpoint.
+COACHVISION_COSMOS_NIM_URL  Cosmos Reason NIM chat-completions endpoint.
                            e.g. https://integrate.api.nvidia.com/v1/chat/completions
-VOLLEYBALL_COSMOS_MODEL    Model id (default: nvidia/cosmos-reason-3).
-VOLLEYBALL_COSMOS_API_KEY  Bearer token for hosted NIM (optional for local NIM).
-VOLLEYBALL_COSMOS_TIMEOUT  Per-request timeout seconds (default: 30).
+COACHVISION_COSMOS_MODEL    Model id (default: nvidia/cosmos-reason-3).
+COACHVISION_COSMOS_API_KEY  Bearer token for hosted NIM (optional for local NIM).
+COACHVISION_COSMOS_TIMEOUT  Per-request timeout seconds (default: 30).
 """
 import json
 import os
 import urllib.error
 import urllib.request
 
+import domains
+
 DEFAULT_MODEL = "nvidia/cosmos-reason-3"
 DEFAULT_TIMEOUT = 30
 
 # The coaching vocabulary we ask the model to choose from. Keeping the model
 # constrained to a known set keeps its output mergeable with heuristic tags.
-PROMPT_TAGS = ("serve", "reception", "set", "attack", "block", "dig", "ace", "error")
+# Defaults to volleyball; the active domain supplies the real vocabulary.
+PROMPT_TAGS = domains.VOLLEYBALL.tags
 
 
 def is_configured() -> bool:
     """True when a Cosmos Reason endpoint is configured."""
-    return bool(os.environ.get("VOLLEYBALL_COSMOS_NIM_URL"))
+    return bool(os.environ.get("COACHVISION_COSMOS_NIM_URL"))
 
 
-def _build_prompt(start, end, base_tags):
+def _build_prompt(start, end, base_tags, domain):
     base = ", ".join(base_tags) if base_tags else "none detected"
-    vocab = ", ".join(PROMPT_TAGS)
+    vocab = ", ".join(domain.tags)
     return (
-        "You are a volleyball video analyst. A rally clip runs from "
+        f"You are a {domain.analyst_role}. A {domain.segment_noun} clip runs from "
         f"{start:.1f}s to {end:.1f}s. Heuristic tags so far: {base}. "
         f"From this vocabulary only [{vocab}], list every coaching event visible "
-        "in the rally. Respond with a JSON array of strings, nothing else."
+        f"in the {domain.segment_noun}. Respond with a JSON array of strings, nothing else."
     )
 
 
-def query_cosmos(start, end, base_tags, url=None, model=None, api_key=None, timeout=None):
+def query_cosmos(start, end, base_tags, url=None, model=None, api_key=None, timeout=None, domain=None):
     """Call Cosmos Reason and return the list of tags it reports.
 
     Returns None on any error so callers can fall back. The request shape is the
     OpenAI-compatible chat-completions API that NVIDIA NIM exposes.
     """
-    url = url or os.environ.get("VOLLEYBALL_COSMOS_NIM_URL")
+    domain = domains.get_domain(domain)
+    url = url or os.environ.get("COACHVISION_COSMOS_NIM_URL")
     if not url:
         return None
-    model = model or os.environ.get("VOLLEYBALL_COSMOS_MODEL", DEFAULT_MODEL)
-    api_key = api_key or os.environ.get("VOLLEYBALL_COSMOS_API_KEY")
-    timeout = timeout or int(os.environ.get("VOLLEYBALL_COSMOS_TIMEOUT", DEFAULT_TIMEOUT))
+    model = model or os.environ.get("COACHVISION_COSMOS_MODEL", DEFAULT_MODEL)
+    api_key = api_key or os.environ.get("COACHVISION_COSMOS_API_KEY")
+    timeout = timeout or int(os.environ.get("COACHVISION_COSMOS_TIMEOUT", DEFAULT_TIMEOUT))
 
     payload = {
         "model": model,
-        "messages": [{"role": "user", "content": _build_prompt(start, end, base_tags)}],
+        "messages": [{"role": "user", "content": _build_prompt(start, end, base_tags, domain)}],
         "temperature": 0.2,
     }
     data = json.dumps(payload).encode("utf-8")
@@ -111,35 +115,39 @@ def parse_response(body):
     return [str(t).strip().lower() for t in tags if str(t).strip()]
 
 
-def merge_tags(base_tags, model_tags):
+def merge_tags(base_tags, model_tags, vocab=PROMPT_TAGS):
     """Union of heuristic and model tags, restricted to the known vocabulary.
 
-    Restricting to PROMPT_TAGS guards against the model inventing labels the
-    dashboard doesn't understand. Order follows the canonical vocabulary.
+    Restricting to ``vocab`` (the active domain's tags) guards against the model
+    inventing labels the dashboard doesn't understand. Order follows the
+    canonical vocabulary.
     """
     combined = set(base_tags or [])
     for t in model_tags or []:
-        if t in PROMPT_TAGS:
+        if t in vocab:
             combined.add(t)
-    return [t for t in PROMPT_TAGS if t in combined] + sorted(
-        t for t in combined if t not in PROMPT_TAGS
+    return [t for t in vocab if t in combined] + sorted(
+        t for t in combined if t not in vocab
     )
 
 
-def make_enricher():
+def make_enricher(domain=None):
     """Return a tag_enricher(source, start, end, base_tags) -> tags callable.
 
     Raises RuntimeError when no endpoint is configured so the caller can fall
     back loudly during setup, but the returned callable itself never raises --
-    it returns the baseline tags on any per-clip failure.
+    it returns the baseline tags on any per-clip failure. The ``domain`` fixes
+    the analyst role and tag vocabulary the model is constrained to.
     """
     if not is_configured():
-        raise RuntimeError("VOLLEYBALL_COSMOS_NIM_URL not set")
+        raise RuntimeError("COACHVISION_COSMOS_NIM_URL not set")
+
+    domain = domains.get_domain(domain)
 
     def enrich(source, start, end, base_tags):
-        model_tags = query_cosmos(start, end, base_tags)
+        model_tags = query_cosmos(start, end, base_tags, domain=domain)
         if not model_tags:
             return base_tags
-        return merge_tags(base_tags, model_tags)
+        return merge_tags(base_tags, model_tags, vocab=domain.tags)
 
     return enrich
