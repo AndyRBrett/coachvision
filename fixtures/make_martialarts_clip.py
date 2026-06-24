@@ -11,7 +11,7 @@ frame. What signals play is whether it is *moving*. During an exchange the
 fighter sweeps across the mat with a striking bob; between exchanges it freezes
 in place. ``detect.detect_motion`` thresholds the frame-to-frame difference, so a
 frozen fighter produces no motion and reads as a gap -- exactly the signal
-highlights.segment_rallies uses to split play into exchanges.
+highlights.segment_plays uses to split play into exchanges.
 
 Outputs (committed as fixtures, regenerate with ``python make_martialarts_clip.py``):
   martialarts_clip.pgm.gz       -- gzipped P5/PGM frame sequence (the "clip").

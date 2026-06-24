@@ -13,9 +13,9 @@ between sports is:
 
 A :class:`Domain` bundles exactly those differences so every other module can
 stay generic and just ask the active domain. Select it with the
-``PIPELINE_DOMAIN`` environment variable or a ``--domain`` CLI flag. The default
+``COACHVISION_DOMAIN`` environment variable or a ``--domain`` CLI flag. The default
 is volleyball, which preserves prior behaviour and the overseer's existing
-machine-readable status contract (``rally_count``, ``frames_processed``, ...).
+machine-readable status contract (``segment_count``, ``frames_processed``, ...).
 
 Why these two detectors?
 ------------------------
@@ -59,14 +59,14 @@ class Domain:
     segment_plural: str      # "rallies" / "exchanges"
     subject_noun: str        # "ball" / "fighter"
     surface_noun: str        # "court" / "mat"
-    contact_noun: str        # "contact" / "strike"
+    action_noun: str        # "contact" / "strike"
 
     # Role string handed to the optional Cosmos Reason vision-language tagger.
     analyst_role: str        # "volleyball video analyst" / ...
 
     @property
-    def contact_plural(self) -> str:
-        return self.contact_noun + "s"
+    def action_plural(self) -> str:
+        return self.action_noun + "s"
 
 
 VOLLEYBALL = Domain(
@@ -83,7 +83,7 @@ VOLLEYBALL = Domain(
     segment_plural="rallies",
     subject_noun="ball",
     surface_noun="court",
-    contact_noun="contact",
+    action_noun="contact",
     analyst_role="volleyball video analyst",
 )
 
@@ -106,7 +106,7 @@ MARTIAL_ARTS = Domain(
     segment_plural="exchanges",
     subject_noun="fighter",
     surface_noun="mat",
-    contact_noun="strike",
+    action_noun="strike",
     analyst_role="martial arts video analyst",
 )
 
@@ -124,7 +124,7 @@ _ALIASES = {
 }
 
 DEFAULT_DOMAIN = "volleyball"
-ENV_VAR = "PIPELINE_DOMAIN"
+ENV_VAR = "COACHVISION_DOMAIN"
 
 
 def _normalize(name: str) -> str:

@@ -51,9 +51,9 @@ class TestMartialArtsDetection(unittest.TestCase):
 
         report = coaching.build_report(tracking, domain="martial_arts")
         self.assertEqual(report["domain"], "martial_arts")
-        self.assertGreaterEqual(report["rally_count"], 2)
+        self.assertGreaterEqual(report["segment_count"], 2)
         # Segment ids and wording follow the martial-arts vocabulary.
-        self.assertTrue(report["rallies"][0]["id"].startswith("exchange_"))
+        self.assertTrue(report["segments"][0]["id"].startswith("exchange_"))
         summary = coaching.render_summary(report)
         self.assertIn("exchanges", summary)
         self.assertIn("strike-zone heatmap", summary)
@@ -64,9 +64,9 @@ class TestMartialArtsSelfTest(unittest.TestCase):
     def test_self_test_passes(self):
         result = pipeline.self_test(results_dir=None, verbose=False, domain="martial_arts")
         self.assertEqual(result["metrics"]["domain"], "martial_arts")
-        self.assertGreaterEqual(result["metrics"]["rally_count"], 1)
+        self.assertGreaterEqual(result["metrics"]["segment_count"], 1)
         # Strikes were tagged from the bundled events.
-        self.assertTrue(any(r["tags"] for r in result["report"]["rallies"]))
+        self.assertTrue(any(r["tags"] for r in result["report"]["segments"]))
 
 
 if __name__ == "__main__":

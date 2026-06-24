@@ -2,15 +2,15 @@
 """End-to-end CV pipeline: clip -> detection -> highlights -> coaching report.
 
 This ties the stages together and, crucially, provides a SELF-TEST that runs the
-whole pipeline on the bundled reference clip (fixtures/reference_clip.pgm.gz).
-The self-test is wired into CI, so a broken pipeline now *fails the build*
-instead of silently sitting at "0 frames processed" for weeks.
+whole pipeline on each domain's bundled reference clip. The self-test is wired
+into CI, so a broken pipeline now *fails the build* instead of silently sitting
+at "0 frames processed" for weeks.
 
 Stages
 ------
-  1. detect.run_detection   -- pixels -> per-frame ball track (tracking JSON).
-  2. highlights.build_manifest -- tracking -> tagged per-rally clip manifest.
-  3. coaching.build_report  -- tracking -> rally length / ball speed / heatmap.
+  1. detect.run_detection   -- pixels -> per-frame subject track (tracking JSON).
+  2. highlights.build_manifest -- tracking -> tagged per-segment clip manifest.
+  3. coaching.build_report  -- tracking -> segment length / subject speed / heatmap.
 
 Running it on a real clip writes the manifest + coaching report + a results
 metrics file (results/metrics.json) that write_status.py reads, so processed
@@ -31,8 +31,8 @@ REFERENCE_CLIP = os.path.join(HERE, "fixtures", "reference_clip.pgm.gz")
 REFERENCE_EVENTS = os.path.join(HERE, "fixtures", "reference_clip.events.json")
 
 DEFAULT_RESULTS_DIR = "results"
-# Nominal calibration for the reference clip: a 9 m court width spans the 80 px
-# frame -> 0.1125 m/px. Used only to show illustrative metric speeds.
+# Nominal calibration for the volleyball reference clip: a 9 m court width spans
+# the 80 px frame -> 0.1125 m/px. Used only to show illustrative metric speeds.
 REFERENCE_M_PER_PX = 9.0 / 80.0
 
 # Per-domain self-test fixtures: each proves its own detector end-to-end.
@@ -92,7 +92,7 @@ def run_pipeline(
         "frames_processed": tracking["frame_count"],
         "detected_frames": tracking["detected_frames"],
         "failed_frames": 0,
-        "rally_count": manifest["rally_count"],
+        "segment_count": manifest["segment_count"],
         "errors": [],
     }
     return {"tracking": tracking, "manifest": manifest, "report": report, "metrics": metrics}
@@ -102,7 +102,7 @@ def self_test(results_dir=DEFAULT_RESULTS_DIR, verbose=True, domain=None):
     """Run the full pipeline on a domain's bundled reference clip and validate it.
 
     ``domain`` selects which sport's fixture/detector to prove (default from
-    PIPELINE_DOMAIN). Returns the result dict on success; raises AssertionError
+    COACHVISION_DOMAIN). Returns the result dict on success; raises AssertionError
     if any stage produces an obviously-broken result (no frames, no segments,
     empty report). Also writes ``results/selftest.json`` so the overseer can see
     the pipeline was verified end-to-end, for which domain, and on what date.
@@ -122,11 +122,11 @@ def self_test(results_dir=DEFAULT_RESULTS_DIR, verbose=True, domain=None):
     seg = domain.segment_plural
     assert tracking["frame_count"] > 0, "detector read zero frames"
     assert tracking["detected_frames"] > 0, f"detector found the {domain.subject_noun} in zero frames"
-    assert report["rally_count"] >= 1, f"no {seg} segmented from the reference clip"
+    assert report["segment_count"] >= 1, f"no {seg} segmented from the reference clip"
     assert report["total_play_s"] > 0, f"{seg} have zero total play time"
-    assert any(r["tags"] for r in report["rallies"]), f"no coaching tags attached to any {domain.segment_noun}"
-    assert report["contact_heatmap"]["contacts_binned"] > 0, f"no {domain.contact_plural} binned into the heatmap"
-    assert any(r["ball_speed"] for r in report["rallies"]), f"{domain.subject_noun} speed could not be measured"
+    assert any(r["tags"] for r in report["segments"]), f"no coaching tags attached to any {domain.segment_noun}"
+    assert report["action_heatmap"]["actions_binned"] > 0, f"no {domain.action_plural} binned into the heatmap"
+    assert any(r["subject_speed"] for r in report["segments"]), f"{domain.subject_noun} speed could not be measured"
 
     selftest = {
         "ok": True,
@@ -135,7 +135,7 @@ def self_test(results_dir=DEFAULT_RESULTS_DIR, verbose=True, domain=None):
         "clip": os.path.relpath(clip, HERE),
         "frames_processed": tracking["frame_count"],
         "detected_frames": tracking["detected_frames"],
-        "rally_count": report["rally_count"],
+        "segment_count": report["segment_count"],
     }
     if results_dir:
         os.makedirs(results_dir, exist_ok=True)
@@ -147,8 +147,8 @@ def self_test(results_dir=DEFAULT_RESULTS_DIR, verbose=True, domain=None):
         print(coaching.render_summary(report))
         print()
         print(f"SELF-TEST OK ({domain.label}): processed {selftest['frames_processed']} frames, "
-              f"{selftest['rally_count']} {seg}, "
-              f"{report['contact_heatmap']['contacts_binned']} {domain.contact_plural} binned.")
+              f"{selftest['segment_count']} {seg}, "
+              f"{report['action_heatmap']['actions_binned']} {domain.action_plural} binned.")
     return result
 
 
@@ -179,7 +179,7 @@ def main():
     parser.add_argument("--fps", type=float, default=10.0)
     parser.add_argument("--meters-per-pixel", type=float, default=None)
     parser.add_argument("--domain", default=None,
-                        help="Sport domain (volleyball|martial_arts); default from PIPELINE_DOMAIN")
+                        help="Sport domain (volleyball|martial_arts); default from COACHVISION_DOMAIN")
     parser.add_argument("--output-dir", default="highlights", help="Highlight manifest dir")
     parser.add_argument("--coaching-dir", default="coaching", help="Coaching report dir")
     parser.add_argument("--results-dir", default=DEFAULT_RESULTS_DIR, help="Metrics output dir")
@@ -209,7 +209,7 @@ def main():
     _write_artifacts(result, args.output_dir, args.coaching_dir, args.results_dir)
     m = result["metrics"]
     seg = domains.get_domain(m.get("domain")).segment_plural
-    print(f"Processed {m['frames_processed']} frames -> {m['rally_count']} {seg}. "
+    print(f"Processed {m['frames_processed']} frames -> {m['segment_count']} {seg}. "
           f"Wrote manifest, coaching report, and {args.results_dir}/metrics.json")
 
 

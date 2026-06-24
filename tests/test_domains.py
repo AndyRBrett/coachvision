@@ -46,7 +46,7 @@ class TestDomainShape(unittest.TestCase):
     def test_domains_have_distinct_vocab(self):
         # The whole point of switching domains: the action vocabulary differs.
         self.assertNotEqual(set(domains.VOLLEYBALL.tags), set(domains.MARTIAL_ARTS.tags))
-        self.assertEqual(domains.MARTIAL_ARTS.contact_plural, "strikes")
+        self.assertEqual(domains.MARTIAL_ARTS.action_plural, "strikes")
         self.assertEqual(domains.MARTIAL_ARTS.segment_plural, "exchanges")
 
 

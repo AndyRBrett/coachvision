@@ -11,14 +11,14 @@ def _frames(spec, fps=10):
     """Build frames from a (has_ball) bool list at the given fps."""
     out = []
     for i, has in enumerate(spec):
-        out.append({"frame": i, "t": i / fps, "ball": [1, 2] if has else None})
+        out.append({"frame": i, "t": i / fps, "subject": [1, 2] if has else None})
     return out
 
 
 class TestSegmentRallies(unittest.TestCase):
     def test_single_continuous_rally(self):
         frames = _frames([True] * 30, fps=10)  # 3s of play
-        rallies = highlights.segment_rallies(frames, fps=10, min_rally_s=1.0)
+        rallies = highlights.segment_plays(frames, fps=10, min_segment_s=1.0)
         self.assertEqual(len(rallies), 1)
         self.assertAlmostEqual(rallies[0]["start"], 0.0)
         self.assertAlmostEqual(rallies[0]["end"], 2.9)
@@ -27,20 +27,20 @@ class TestSegmentRallies(unittest.TestCase):
         # 2s play, 3s ball missing (> 2s gap), 2s play
         spec = [True] * 20 + [False] * 30 + [True] * 20
         frames = _frames(spec, fps=10)
-        rallies = highlights.segment_rallies(frames, fps=10, max_gap_s=2.0, min_rally_s=1.0)
+        rallies = highlights.segment_plays(frames, fps=10, max_gap_s=2.0, min_segment_s=1.0)
         self.assertEqual(len(rallies), 2)
 
     def test_short_gap_does_not_split(self):
         # 1s missing < 2s threshold -> still one rally
         spec = [True] * 20 + [False] * 10 + [True] * 20
         frames = _frames(spec, fps=10)
-        rallies = highlights.segment_rallies(frames, fps=10, max_gap_s=2.0, min_rally_s=1.0)
+        rallies = highlights.segment_plays(frames, fps=10, max_gap_s=2.0, min_segment_s=1.0)
         self.assertEqual(len(rallies), 1)
 
     def test_short_rally_discarded(self):
         spec = [True] * 5  # 0.5s < 1.0s min
         frames = _frames(spec, fps=10)
-        rallies = highlights.segment_rallies(frames, fps=10, min_rally_s=1.0)
+        rallies = highlights.segment_plays(frames, fps=10, min_segment_s=1.0)
         self.assertEqual(rallies, [])
 
 
@@ -53,12 +53,12 @@ class TestTagRally(unittest.TestCase):
             {"t": 5.0, "type": "dig"},     # inside
             {"t": 9.0, "type": "block"},   # after
         ]
-        self.assertEqual(highlights.tag_rally(rally, events), ["attack", "dig"])
+        self.assertEqual(highlights.tag_segment(rally, events), ["attack", "dig"])
 
     def test_canonical_tag_order(self):
         rally = {"start": 0.0, "end": 10.0}
         events = [{"t": 1, "type": "dig"}, {"t": 2, "type": "serve"}, {"t": 3, "type": "block"}]
-        self.assertEqual(highlights.tag_rally(rally, events), ["serve", "block", "dig"])
+        self.assertEqual(highlights.tag_segment(rally, events), ["serve", "block", "dig"])
 
 
 class TestFfmpegCmd(unittest.TestCase):
@@ -89,7 +89,7 @@ class TestBuildManifest(unittest.TestCase):
             "events": [{"t": 0.5, "type": "serve"}, {"t": 5.5, "type": "attack"}],
         }
         manifest = highlights.build_manifest(tracking)
-        self.assertEqual(manifest["rally_count"], 2)
+        self.assertEqual(manifest["segment_count"], 2)
         self.assertEqual(manifest["clips"][0]["tags"], ["serve"])
         self.assertEqual(manifest["clips"][1]["tags"], ["attack"])
         self.assertTrue(manifest["clips"][0]["renderable"])

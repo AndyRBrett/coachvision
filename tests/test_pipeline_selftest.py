@@ -26,11 +26,11 @@ class TestPipelineSelfTest(unittest.TestCase):
             self.assertGreater(tracking["detected_frames"], 0)
 
             # Highlights + coaching produced real output.
-            self.assertGreaterEqual(manifest["rally_count"], 1)
-            self.assertEqual(report["rally_count"], manifest["rally_count"])
-            self.assertTrue(any(r["tags"] for r in report["rallies"]))
-            self.assertGreater(report["contact_heatmap"]["contacts_binned"], 0)
-            self.assertTrue(any(r["ball_speed"] for r in report["rallies"]))
+            self.assertGreaterEqual(manifest["segment_count"], 1)
+            self.assertEqual(report["segment_count"], manifest["segment_count"])
+            self.assertTrue(any(r["tags"] for r in report["segments"]))
+            self.assertGreater(report["action_heatmap"]["actions_binned"], 0)
+            self.assertTrue(any(r["subject_speed"] for r in report["segments"]))
 
             # Metrics roll-up is consistent (this is what write_status reads).
             metrics = result["metrics"]
@@ -42,10 +42,10 @@ class TestPipelineSelfTest(unittest.TestCase):
 
     def test_reference_clip_has_three_rallies(self):
         # Locks in the structure of the bundled fixture so a fixture or
-        # segmentation regression is caught explicitly, not just "rally_count>=1".
+        # segmentation regression is caught explicitly, not just "segment_count>=1".
         with tempfile.TemporaryDirectory() as tmp:
             result = pipeline.self_test(results_dir=tmp, verbose=False)
-        self.assertEqual(result["report"]["rally_count"], 3)
+        self.assertEqual(result["report"]["segment_count"], 3)
 
 
 if __name__ == "__main__":

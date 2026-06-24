@@ -6,10 +6,10 @@
   "failed_frames": 0,
   "footage_processed": 0,
   "frames_processed": 0,
-  "generated_at": "2026-06-24T22:24:09Z",
+  "generated_at": "2026-06-24T22:46:35Z",
   "idle_threshold_days": 14,
   "last_footage_at": null,
-  "last_run_at": "2026-06-24T22:24:09Z",
+  "last_run_at": "2026-06-24T22:46:35Z",
   "needs_footage": true,
   "nudge": "No footage has ever been ingested -- drop clips in the watched folder to start.",
   "pending_footage": 0,
@@ -18,7 +18,7 @@
     "domain": "volleyball",
     "frames_processed": 104,
     "ok": true,
-    "rally_count": 3,
-    "verified_at": "2026-06-24T22:24:00Z"
+    "segment_count": 3,
+    "verified_at": "2026-06-24T22:46:28Z"
   }
 }

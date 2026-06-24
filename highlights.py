@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
-"""Auto-generate per-rally highlight clips with coaching tags (Overseer #9).
+"""Auto-generate per-segment highlight clips with coaching tags (Overseer #9).
 
 Scope (deliberately bounded before building)
 -------------------------------------------
-This turns existing ball+player tracking data into rewatchable, tagged clips --
+This turns existing subject tracking data into rewatchable, tagged clips --
 the project's stated purpose (coaching feedback). It is NOT a detector; it
 consumes tracking output the pipeline already produces. Three stages:
 
-  1. segment_rallies   -- split continuous play into rallies from ball-motion
-                          gaps (ball missing/still for longer than a threshold).
-  2. tag_rally         -- attach coaching tags (serve/attack/block/dig/...) whose
-                          event timestamps fall inside each rally window.
-  3. build_manifest    -- emit a dashboard manifest, one entry per rally, with an
-                          ffmpeg trim+overlay command per clip.
+  1. segment_plays   -- split continuous play into segments from subject-motion
+                          gaps (subject missing/still for longer than a threshold).
+  2. tag_segment       -- attach coaching tags (the active domain's vocabulary,
+                          e.g. serve/attack/block or jab/cross/kick) whose event
+                          timestamps fall inside each segment window.
+  3. build_manifest    -- emit a dashboard manifest, one entry per segment, with
+                          an ffmpeg trim+overlay command per clip.
 
 Rendering (ffmpeg) is OPTIONAL and guarded: the command is always recorded in
 the manifest, but only executed when ffmpeg is installed and render=True. This
@@ -27,9 +28,9 @@ Tracking input schema (JSON)
 {
   "fps": 30,
   "source": "drop/match1.mp4",          # optional source video for rendering
-  "frames": [                            # per-frame ball position (or null)
-    {"frame": 0, "t": 0.0, "ball": [x, y]},
-    {"frame": 1, "t": 0.033, "ball": null},
+  "frames": [                            # per-frame subject position (or null)
+    {"frame": 0, "t": 0.0, "subject": [x, y]},
+    {"frame": 1, "t": 0.033, "subject": null},
     ...
   ],
   "events": [                            # detected coaching events
@@ -57,7 +58,7 @@ KNOWN_TAGS = domains.VOLLEYBALL.tags
 # Defaults for segmentation (volleyball values; per-domain overrides live in
 # domains.py and are applied by build_manifest).
 DEFAULT_MAX_GAP_S = domains.VOLLEYBALL.max_gap_s   # subject missing/still longer ends a segment
-DEFAULT_MIN_RALLY_S = domains.VOLLEYBALL.min_segment_s  # discard blips shorter than this
+DEFAULT_MIN_SEGMENT_S = domains.VOLLEYBALL.min_segment_s  # discard blips shorter than this
 DEFAULT_PAD_S = domains.VOLLEYBALL.pad_s        # padding added before/after each segment
 
 
@@ -72,43 +73,44 @@ def _frame_time(frame: dict, fps: float) -> float:
     return float(frame.get("frame", 0)) / fps if fps else 0.0
 
 
-def segment_rallies(
+def segment_plays(
     frames,
     fps,
     max_gap_s=DEFAULT_MAX_GAP_S,
-    min_rally_s=DEFAULT_MIN_RALLY_S,
+    min_segment_s=DEFAULT_MIN_SEGMENT_S,
 ):
-    """Split frames into rally [start, end] windows from ball-motion gaps.
+    """Split frames into play [start, end] windows from subject-motion gaps.
 
-    A rally is a run of frames where the ball is tracked. When the ball goes
-    missing (``ball`` is null/absent) for longer than ``max_gap_s``, the current
-    rally ends. Rallies shorter than ``min_rally_s`` are dropped as noise.
+    A play (a rally in volleyball, an exchange in martial arts) is a run of
+    frames where the subject is tracked. When the subject goes missing
+    (``subject`` is null/absent) for longer than ``max_gap_s``, the current play
+    ends. Plays shorter than ``min_segment_s`` are dropped as noise.
 
     Returns a list of dicts: {"start": float, "end": float}.
     """
-    rallies = []
+    segments = []
     start = None
     last_seen = None
     for fr in frames:
         t = _frame_time(fr, fps)
-        has_ball = fr.get("ball") is not None
-        if has_ball:
+        has_subject = fr.get("subject") is not None
+        if has_subject:
             if start is None:
                 start = t
             last_seen = t
         else:
             if start is not None and last_seen is not None and (t - last_seen) > max_gap_s:
-                rallies.append({"start": start, "end": last_seen})
+                segments.append({"start": start, "end": last_seen})
                 start = None
                 last_seen = None
     if start is not None and last_seen is not None:
-        rallies.append({"start": start, "end": last_seen})
+        segments.append({"start": start, "end": last_seen})
 
-    return [r for r in rallies if (r["end"] - r["start"]) >= min_rally_s]
+    return [r for r in segments if (r["end"] - r["start"]) >= min_segment_s]
 
 
-def tag_rally(rally, events, known_tags=KNOWN_TAGS):
-    """Return the sorted set of coaching tags whose events fall in the rally.
+def tag_segment(segment, events, known_tags=KNOWN_TAGS):
+    """Return the sorted set of coaching tags whose events fall in the segment.
 
     Padding is intentionally not applied here -- tags reflect events inside the
     actual segment window. Unknown event types are passed through so custom tags
@@ -120,7 +122,7 @@ def tag_rally(rally, events, known_tags=KNOWN_TAGS):
         t = ev.get("t")
         if t is None:
             continue
-        if rally["start"] <= t <= rally["end"]:
+        if segment["start"] <= t <= segment["end"]:
             etype = ev.get("type")
             if etype:
                 tags.add(etype)
@@ -160,7 +162,7 @@ def build_manifest(
     tracking,
     output_dir=DEFAULT_OUTPUT_DIR,
     max_gap_s=None,
-    min_rally_s=None,
+    min_segment_s=None,
     pad_s=None,
     tag_enricher=None,
     domain=None,
@@ -170,7 +172,7 @@ def build_manifest(
     The active ``domain`` (resolved from the argument, the tracking record's
     ``domain``, or the configured default) supplies the tag vocabulary, the
     segment id prefix, and segmentation defaults; explicit ``max_gap_s`` /
-    ``min_rally_s`` / ``pad_s`` override those defaults when given.
+    ``min_segment_s`` / ``pad_s`` override those defaults when given.
 
     ``tag_enricher`` is an optional callable (source, start, end, base_tags) ->
     tags, used to fold in VLM-derived tags (e.g. NVIDIA Cosmos Reason). It is
@@ -179,7 +181,7 @@ def build_manifest(
     """
     domain = domains.get_domain(domain if domain is not None else tracking.get("domain"))
     max_gap_s = domain.max_gap_s if max_gap_s is None else max_gap_s
-    min_rally_s = domain.min_segment_s if min_rally_s is None else min_rally_s
+    min_segment_s = domain.min_segment_s if min_segment_s is None else min_segment_s
     pad_s = domain.pad_s if pad_s is None else pad_s
 
     fps = float(tracking.get("fps") or 30.0)
@@ -187,13 +189,13 @@ def build_manifest(
     frames = tracking.get("frames", [])
     events = tracking.get("events", [])
 
-    rallies = segment_rallies(frames, fps, max_gap_s=max_gap_s, min_rally_s=min_rally_s)
+    segments = segment_plays(frames, fps, max_gap_s=max_gap_s, min_segment_s=min_segment_s)
     clips = []
-    for i, rally in enumerate(rallies, start=1):
-        tags = tag_rally(rally, events, known_tags=domain.tags)
+    for i, segment in enumerate(segments, start=1):
+        tags = tag_segment(segment, events, known_tags=domain.tags)
         if tag_enricher is not None:
             try:
-                tags = tag_enricher(source, rally["start"], rally["end"], tags)
+                tags = tag_enricher(source, segment["start"], segment["end"], tags)
             except Exception as exc:  # enrichment is best-effort, never fatal
                 clips_warning = f"tag_enricher failed: {exc}"
             else:
@@ -202,12 +204,12 @@ def build_manifest(
             clips_warning = None
         clip_id = f"{domain.segment_noun}_{i:03d}"
         out_path = os.path.join(output_dir, f"{clip_id}.mp4")
-        cmd = ffmpeg_trim_cmd(source, rally["start"], rally["end"], out_path, tags, pad_s)
+        cmd = ffmpeg_trim_cmd(source, segment["start"], segment["end"], out_path, tags, pad_s)
         entry = {
             "id": clip_id,
-            "start": round(rally["start"], 3),
-            "end": round(rally["end"], 3),
-            "duration": round(rally["end"] - rally["start"], 3),
+            "start": round(segment["start"], 3),
+            "end": round(segment["end"], 3),
+            "duration": round(segment["end"] - segment["start"], 3),
             "tags": tags,
             "output": out_path,
             "renderable": cmd is not None,
@@ -222,9 +224,9 @@ def build_manifest(
         "source": source,
         "domain": domain.key,
         "fps": fps,
-        # ``rally_count`` is kept as the stable, machine-readable segment count
+        # ``segment_count`` is kept as the stable, machine-readable segment count
         # the overseer status contract depends on, across all domains.
-        "rally_count": len(clips),
+        "segment_count": len(clips),
         "clips": clips,
     }
 
@@ -277,7 +279,7 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true", help="Print ffmpeg commands without running them")
     parser.add_argument("--cosmos", action="store_true", help="Enrich tags via NVIDIA Cosmos Reason if configured")
     parser.add_argument("--domain", default=None,
-                        help="Sport domain (volleyball|martial_arts); default from PIPELINE_DOMAIN")
+                        help="Sport domain (volleyball|martial_arts); default from COACHVISION_DOMAIN")
     args = parser.parse_args()
 
     with open(args.tracking) as fh:
@@ -297,7 +299,7 @@ def main() -> None:
     manifest = build_manifest(tracking, output_dir=args.output_dir, tag_enricher=enricher, domain=domain)
     manifest_path = args.manifest or os.path.join(args.output_dir, "manifest.json")
     write_manifest(manifest, manifest_path)
-    print(f"Wrote {manifest_path}: {manifest['rally_count']} {domain.segment_plural}")
+    print(f"Wrote {manifest_path}: {manifest['segment_count']} {domain.segment_plural}")
 
     if args.render or args.dry_run:
         for res in render_clips(manifest, dry_run=args.dry_run):

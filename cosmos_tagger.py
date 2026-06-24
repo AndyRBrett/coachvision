@@ -20,11 +20,11 @@ Design constraints
 
 Environment variables
 ---------------------
-VOLLEYBALL_COSMOS_NIM_URL  Cosmos Reason NIM chat-completions endpoint.
+COACHVISION_COSMOS_NIM_URL  Cosmos Reason NIM chat-completions endpoint.
                            e.g. https://integrate.api.nvidia.com/v1/chat/completions
-VOLLEYBALL_COSMOS_MODEL    Model id (default: nvidia/cosmos-reason-3).
-VOLLEYBALL_COSMOS_API_KEY  Bearer token for hosted NIM (optional for local NIM).
-VOLLEYBALL_COSMOS_TIMEOUT  Per-request timeout seconds (default: 30).
+COACHVISION_COSMOS_MODEL    Model id (default: nvidia/cosmos-reason-3).
+COACHVISION_COSMOS_API_KEY  Bearer token for hosted NIM (optional for local NIM).
+COACHVISION_COSMOS_TIMEOUT  Per-request timeout seconds (default: 30).
 """
 import json
 import os
@@ -44,7 +44,7 @@ PROMPT_TAGS = domains.VOLLEYBALL.tags
 
 def is_configured() -> bool:
     """True when a Cosmos Reason endpoint is configured."""
-    return bool(os.environ.get("VOLLEYBALL_COSMOS_NIM_URL"))
+    return bool(os.environ.get("COACHVISION_COSMOS_NIM_URL"))
 
 
 def _build_prompt(start, end, base_tags, domain):
@@ -65,12 +65,12 @@ def query_cosmos(start, end, base_tags, url=None, model=None, api_key=None, time
     OpenAI-compatible chat-completions API that NVIDIA NIM exposes.
     """
     domain = domains.get_domain(domain)
-    url = url or os.environ.get("VOLLEYBALL_COSMOS_NIM_URL")
+    url = url or os.environ.get("COACHVISION_COSMOS_NIM_URL")
     if not url:
         return None
-    model = model or os.environ.get("VOLLEYBALL_COSMOS_MODEL", DEFAULT_MODEL)
-    api_key = api_key or os.environ.get("VOLLEYBALL_COSMOS_API_KEY")
-    timeout = timeout or int(os.environ.get("VOLLEYBALL_COSMOS_TIMEOUT", DEFAULT_TIMEOUT))
+    model = model or os.environ.get("COACHVISION_COSMOS_MODEL", DEFAULT_MODEL)
+    api_key = api_key or os.environ.get("COACHVISION_COSMOS_API_KEY")
+    timeout = timeout or int(os.environ.get("COACHVISION_COSMOS_TIMEOUT", DEFAULT_TIMEOUT))
 
     payload = {
         "model": model,
@@ -140,7 +140,7 @@ def make_enricher(domain=None):
     the analyst role and tag vocabulary the model is constrained to.
     """
     if not is_configured():
-        raise RuntimeError("VOLLEYBALL_COSMOS_NIM_URL not set")
+        raise RuntimeError("COACHVISION_COSMOS_NIM_URL not set")
 
     domain = domains.get_domain(domain)
 

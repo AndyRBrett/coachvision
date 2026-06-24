@@ -10,12 +10,12 @@ on:
 permissions:
   contents: write
 
-# Which sport the pipeline runs for. Set the repo/org variable PIPELINE_DOMAIN
+# Which sport the pipeline runs for. Set the repo/org variable COACHVISION_DOMAIN
 # (Settings -> Secrets and variables -> Actions -> Variables) to "martial_arts"
 # to switch the whole automated pipeline -- detection, self-test, and status --
 # without touching code. Defaults to volleyball.
 env:
-  PIPELINE_DOMAIN: ${{ vars.PIPELINE_DOMAIN || 'volleyball' }}
+  COACHVISION_DOMAIN: ${{ vars.COACHVISION_DOMAIN || 'volleyball' }}
 
 jobs:
   write-status:
@@ -28,7 +28,7 @@ jobs:
           python-version: "3.x"
 
       # Auto-detect new footage in the watched drop folder and enqueue it
-      # (Overseer #8). VOLLEYBALL_DROP_DIR can point at a synced cloud bucket /
+      # (Overseer #8). COACHVISION_DROP_DIR can point at a synced cloud bucket /
       # local dir; a missing folder is treated as "idle", not an error.
       - name: Scan drop folder for new footage
         run: python ingest_watch.py
@@ -36,7 +36,7 @@ jobs:
       # Prove the CV pipeline works end-to-end on the active domain's bundled
       # reference clip and record results/selftest.json, so the status reflects a
       # *verified* (not merely idle) pipeline. A broken pipeline fails here and
-      # is visible. Honors PIPELINE_DOMAIN above.
+      # is visible. Honors COACHVISION_DOMAIN above.
       - name: Pipeline self-test (reference clip)
         run: python pipeline.py --self-test
 

@@ -1,4 +1,4 @@
-# volleyball
+# coachvision
 
 A lightweight computer-vision coaching pipeline with health monitoring for the
 **Project Overseer** (a weekly automated reviewer that reads
@@ -16,8 +16,8 @@ recording (see [Switching sports](#switching-sports-volleyball--martial-arts)).
 | `domains.py` | Sport domains (volleyball / martial arts): detector choice, tag vocabulary, report wording, and segmentation defaults. |
 | `detect.py` | CV front-end: turns raw clip frames into subject-track tracking data (ball or fighter). |
 | `pipeline.py` | Runs the full pipeline (detect → highlights → coaching) and the self-test. |
-| `coaching.py` | Per-clip coaching report: rally length, ball speed, contact-zone heatmap. |
-| `highlights.py` | Segments tracking data into rallies and emits tagged highlight clips. |
+| `coaching.py` | Per-clip coaching report: segment length, subject speed, action-zone heatmap (worded per domain — rally/ball/contact for volleyball, exchange/fighter/strike for martial arts). |
+| `highlights.py` | Segments tracking data into plays and emits tagged highlight clips. |
 | `cosmos_tagger.py` | Optional clip tag enrichment via NVIDIA **Cosmos Reason**. |
 | `ingest_watch.py` | Watches a drop folder, auto-detects new footage, and enqueues unseen clips. |
 | `write_status.py` | Publishes `overseer-status.json` (heartbeat + ingest signals + idle nudge + self-test verification). |
@@ -43,7 +43,7 @@ fighter standing still produces no motion and reads as the gap between exchanges
 the direct analogue of a volleyball going out of play. (Standard dependency-free
 approach; see e.g. [energy-guided temporal segmentation](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7506802/).)
 
-Select the domain with the `--domain` flag or the `PIPELINE_DOMAIN` env var
+Select the domain with the `--domain` flag or the `COACHVISION_DOMAIN` env var
 (default `volleyball`, preserving prior behaviour and the overseer's status
 contract):
 
@@ -53,17 +53,17 @@ python pipeline.py clip.pgm.gz --events clip.events.json --domain martial_arts
 
 # Or set it once for the whole session (detect.py / highlights.py / coaching.py
 # all read it)
-export PIPELINE_DOMAIN=martial_arts
+export COACHVISION_DOMAIN=martial_arts
 python pipeline.py --self-test          # runs the martial-arts reference clip
 ```
 
 For the automated weekly workflow, set the repository variable
-`PIPELINE_DOMAIN` (Settings → Secrets and variables → Actions → Variables) to
+`COACHVISION_DOMAIN` (Settings → Secrets and variables → Actions → Variables) to
 `martial_arts` to switch detection, the self-test, and the published status
 without touching code. Each domain bundles its own reference clip
 (`fixtures/`), so the self-test proves *its* detector end-to-end.
 
-The pipeline's machine-readable keys (`rally_count`, `frames_processed`, …) stay
+The pipeline's machine-readable keys (`segment_count`, `frames_processed`, …) stay
 stable across domains so the Project Overseer keeps working; only the words in
 the human-facing coaching summary change (exchanges/strikes/mat vs.
 rallies/contacts/court).
@@ -139,10 +139,10 @@ feeding. `ingest_watch.py` closes that gap:
 
 ```bash
 # Watch a folder (local dir or synced cloud bucket) for new footage
-VOLLEYBALL_DROP_DIR=drop python ingest_watch.py
+COACHVISION_DROP_DIR=drop python ingest_watch.py
 ```
 
-- Recursively scans `VOLLEYBALL_DROP_DIR` (default `drop/`) for video files.
+- Recursively scans `COACHVISION_DROP_DIR` (default `drop/`) for video files.
 - Diffs against a small seen-state manifest (`ingest_state.json`) so each clip is
   enqueued **once**, and only after its size settles across two scans (so a clip
   still being copied isn't processed half-written).
@@ -162,7 +162,7 @@ visible instead of silently passing as healthy:
 ```
 
 The nudge fires when footage has never been ingested, when the last ingest is
-older than `VOLLEYBALL_IDLE_THRESHOLD_DAYS` (default 14), or when clips are
+older than `COACHVISION_IDLE_THRESHOLD_DAYS` (default 14), or when clips are
 queued but unprocessed (a stalled pipeline). The weekly workflow runs the scan
 before writing status.
 
@@ -202,9 +202,9 @@ served as an NVIDIA NIM microservice. `cosmos_tagger.py` can use it to enrich th
 heuristic event-window tags with model-derived coaching tags:
 
 ```bash
-export VOLLEYBALL_COSMOS_NIM_URL="https://integrate.api.nvidia.com/v1/chat/completions"
-export VOLLEYBALL_COSMOS_API_KEY="nvapi-..."           # for hosted NIM
-export VOLLEYBALL_COSMOS_MODEL="nvidia/cosmos-reason-3" # optional override
+export COACHVISION_COSMOS_NIM_URL="https://integrate.api.nvidia.com/v1/chat/completions"
+export COACHVISION_COSMOS_API_KEY="nvapi-..."           # for hosted NIM
+export COACHVISION_COSMOS_MODEL="nvidia/cosmos-reason-3" # optional override
 python highlights.py examples/sample_tracking.json --cosmos
 ```
 

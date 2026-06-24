@@ -19,9 +19,8 @@ rest of the pipeline tracks. Two detectors, picked by the active domain:
     exchanges -- the direct analogue of a ball going out of play.
 
 Either way, frames with no subject yield a null position -- exactly the signal
-highlights.segment_rallies uses to split continuous play into segments. The
-per-frame position is stored under the ``ball`` key for schema stability across
-the pipeline; read it as "the tracked subject point" (the ball in volleyball,
+highlights.segment_plays uses to split continuous play into segments. The
+per-frame position is stored under the ``subject`` key (the ball in volleyball,
 the fighter in martial arts).
 
 The output schema matches the tracking JSON the rest of the pipeline already
@@ -95,7 +94,7 @@ def _read_token(data, pos):
     return data[start:pos], pos
 
 
-def detect_ball(raster, width, height, threshold=DEFAULT_THRESHOLD, min_pixels=DEFAULT_MIN_PIXELS):
+def detect_blob(raster, width, height, threshold=DEFAULT_THRESHOLD, min_pixels=DEFAULT_MIN_PIXELS):
     """Return the ``[x, y]`` centroid of the brightest blob, or None.
 
     Pixels at/above ``threshold`` are treated as ball-bright; their centroid is
@@ -156,10 +155,10 @@ def detect_frames(width, height, frames, domain=None, fps=10.0):
                                    min_pixels=domain.detect_min_pixels)
             )
         else:
-            pos = detect_ball(raster, width, height,
+            pos = detect_blob(raster, width, height,
                               threshold=domain.detect_threshold,
                               min_pixels=domain.detect_min_pixels)
-        records.append({"frame": i, "t": round(i / fps, 4), "ball": pos})
+        records.append({"frame": i, "t": round(i / fps, 4), "subject": pos})
         prev = raster
     return records
 
@@ -178,7 +177,7 @@ def run_detection(clip_path, fps=10.0, events=None, source=None, domain=None):
     domain = domains.get_domain(domain)
     width, height, frames = load_pgm_frames(clip_path)
     records = detect_frames(width, height, frames, domain=domain, fps=fps)
-    detected = sum(1 for r in records if r["ball"] is not None)
+    detected = sum(1 for r in records if r["subject"] is not None)
     return {
         "fps": fps,
         "source": source if source is not None else clip_path,
@@ -207,7 +206,7 @@ def main():
     parser.add_argument("--events", help="Optional bundled events sidecar JSON")
     parser.add_argument("--fps", type=float, default=10.0)
     parser.add_argument("--domain", default=None,
-                        help="Sport domain (volleyball|martial_arts); default from PIPELINE_DOMAIN")
+                        help="Sport domain (volleyball|martial_arts); default from COACHVISION_DOMAIN")
     parser.add_argument("--output", help="Write tracking JSON here (default: stdout)")
     args = parser.parse_args()
 
