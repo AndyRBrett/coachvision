@@ -1,0 +1,19 @@
+{
+  "clips": [
+    {
+      "duration": 3.4,
+      "end": 3.6,
+      "id": "exchange_001",
+      "output": "reports/clip-20260625-153402/highlights/exchange_001.mp4",
+      "renderable": true,
+      "rendered": true,
+      "start": 0.2,
+      "tags": []
+    }
+  ],
+  "domain": "martial_arts",
+  "fps": 5.0,
+  "generated_at": "2026-06-25T15:34:04Z",
+  "segment_count": 1,
+  "source": "view"
+}

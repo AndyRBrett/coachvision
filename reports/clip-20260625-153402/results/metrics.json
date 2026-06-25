@@ -1,0 +1,13 @@
+{
+  "actual_frames": 26,
+  "detected_frames": 18,
+  "domain": "martial_arts",
+  "errors": [],
+  "expected_frames": 26,
+  "failed_frames": 0,
+  "footage_processed": 1,
+  "frames_processed": 26,
+  "generated_at": "2026-06-25T15:34:04Z",
+  "segment_count": 1,
+  "source": "view"
+}

@@ -1,0 +1,11 @@
+Coaching report (Martial arts) -- view
+  exchanges: 1   total play: 3.4s   longest: 3.4s
+  peak fighter speed: 85.33 px/s
+
+  exchange_001: 3.4s, 0 strikes [untagged], peak 85.33 px/s
+
+  strike-zone heatmap (mat top-left origin):
+    |      |
+    |      |
+    |      |
+    |      |
