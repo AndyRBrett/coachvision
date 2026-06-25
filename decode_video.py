@@ -19,15 +19,24 @@ is unit-testable without ffmpeg installed.
 """
 import gzip
 import os
+import re
 import shutil
 import subprocess
 import tempfile
+import urllib.error
 import urllib.request
 
 import detect
 
 DEFAULT_FPS = 10.0
 DEFAULT_WIDTH = 160   # downsample width in px; height keeps aspect (scale=W:-2)
+
+# Present a normal browser User-Agent: many hosts (Google Storage/Drive, CDNs)
+# answer urllib's default agent with 403 Forbidden.
+_USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+)
 
 
 def ffmpeg_decode_cmd(src, fps=DEFAULT_FPS, width=DEFAULT_WIDTH):
@@ -59,10 +68,35 @@ def _run_ffmpeg(cmd):
     return proc.stdout
 
 
+def direct_download_url(url):
+    """Best-effort rewrite of a share link to a direct-download URL.
+
+    Google Drive ``.../file/d/<id>/view`` viewer links don't serve bytes; rewrite
+    them to the ``uc?export=download`` form. Only helps files shared "Anyone with
+    the link" -- a private file still returns 401/403. Other URLs pass through.
+    """
+    m = re.search(r"drive\.google\.com/file/d/([^/]+)", url)
+    if m:
+        return f"https://drive.google.com/uc?export=download&id={m.group(1)}"
+    return url
+
+
 def _download(url, dest):
-    """Fetch ``url`` to ``dest`` (so a phone/PWA can pass a link, not a commit)."""
-    with urllib.request.urlopen(url) as resp, open(dest, "wb") as fh:
-        shutil.copyfileobj(resp, fh)
+    """Fetch ``url`` to ``dest`` with a browser User-Agent, following redirects.
+
+    Raises a clear RuntimeError on HTTP errors so the workflow log says *why*
+    (e.g. a private/Drive-view link) instead of a bare urllib traceback.
+    """
+    req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp, open(dest, "wb") as fh:
+            shutil.copyfileobj(resp, fh)
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(
+            f"could not download {url!r}: HTTP {exc.code} {exc.reason}. "
+            "Use a public, direct-download link (not a Google Drive 'view' page "
+            "or a private file), or commit the clip under drop/ and pass a path."
+        ) from exc
     return dest
 
 
@@ -105,7 +139,7 @@ def resolve_source(clip_path=None, clip_url=None, work_dir=None):
     if clip_url:
         work_dir = work_dir or tempfile.mkdtemp(prefix="coachvision_")
         dest = os.path.join(work_dir, "input_video")
-        return _download(clip_url, dest)
+        return _download(direct_download_url(clip_url), dest)
     if clip_path:
         if not os.path.isfile(clip_path):
             raise ValueError(f"clip not found: {clip_path}")
