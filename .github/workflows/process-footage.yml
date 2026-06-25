@@ -33,7 +33,7 @@ permissions:
 
 jobs:
   process:
-    runs-on: ubuntu-latest   # ffmpeg is preinstalled here; software decode, no GPU
+    runs-on: ubuntu-latest   # software decode, no GPU
     steps:
       - uses: actions/checkout@v4
 
@@ -41,8 +41,13 @@ jobs:
         with:
           python-version: "3.x"
 
-      - name: Show ffmpeg (sanity)
-        run: ffmpeg -version | head -1
+      # ffmpeg is NOT guaranteed on the runner image, so install it explicitly.
+      # apt exits non-zero if it can't, failing the job loudly instead of later.
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version | head -1
 
       - name: Decode + analyze footage
         env:
