@@ -27,6 +27,10 @@ on:
         description: "Frames per second to sample"
         type: string
         default: "10"
+      name:
+        description: "Session name (optional; shown in the app)"
+        type: string
+        required: false
 
 permissions:
   contents: write
@@ -55,12 +59,15 @@ jobs:
           CLIP_URL: ${{ inputs.clip_url }}
           DOMAIN: ${{ inputs.domain }}
           FPS: ${{ inputs.fps }}
+          NAME: ${{ inputs.name }}
         run: |
           set -euo pipefail
+          NAME_ARGS=()
+          if [ -n "${NAME}" ]; then NAME_ARGS=(--name "${NAME}"); fi
           if [ -n "${CLIP_URL}" ]; then
-            python process_footage.py --url "${CLIP_URL}" --domain "${DOMAIN}" --fps "${FPS}"
+            python process_footage.py --url "${CLIP_URL}" --domain "${DOMAIN}" --fps "${FPS}" "${NAME_ARGS[@]}"
           elif [ -n "${CLIP_PATH}" ]; then
-            python process_footage.py "${CLIP_PATH}" --domain "${DOMAIN}" --fps "${FPS}"
+            python process_footage.py "${CLIP_PATH}" --domain "${DOMAIN}" --fps "${FPS}" "${NAME_ARGS[@]}"
           else
             echo "Provide clip_path or clip_url" >&2
             exit 1

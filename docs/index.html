@@ -38,6 +38,9 @@
       <h2>Analyze a clip</h2>
       <p class="hint">Fires the <code>process-footage</code> workflow on GitHub (CPU only,
         no GPU). Needs a token with Actions write — see Settings.</p>
+      <label>Session name <span class="sub">(optional; shown in the gallery)</span>
+        <input id="sessionName" type="text" placeholder="Sparring – Tue" />
+      </label>
       <label>Sport
         <select id="domain">
           <option value="martial_arts">Martial arts</option>
@@ -66,7 +69,7 @@
       <p class="hint">Stored only in this browser (localStorage). Reads use the GitHub
         contents API; the analyze button needs a token.</p>
       <label>Owner <input id="owner" type="text" placeholder="AndyRBrett" /></label>
-      <label>Repo <input id="repo" type="text" placeholder="volleyball" /></label>
+      <label>Repo <input id="repo" type="text" placeholder="coachvision" /></label>
       <label>Branch <input id="branch" type="text" placeholder="main" /></label>
       <label>GitHub token <span class="sub">(fine-grained: Actions RW + Contents R; or classic <code>repo</code>+<code>workflow</code>)</span>
         <input id="token" type="password" placeholder="github_pat_… (optional for public reads)" />
@@ -83,6 +86,7 @@
       <strong id="dlgTitle"></strong>
       <button id="dlgClose" class="ghost">Close</button>
     </div>
+    <div id="dlgVideos" class="videos"></div>
     <pre id="dlgBody" class="summary"></pre>
   </dialog>
 

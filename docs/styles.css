@@ -94,5 +94,10 @@ dialog#clipDialog {
 dialog::backdrop { background: rgba(0,0,0,.6); }
 .dialog-head { display: flex; justify-content: space-between; align-items: center;
   padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.videos { display: grid; gap: 14px; padding: 14px 14px 0; }
+.videos:empty { padding: 0; }
+.clip { display: grid; gap: 6px; }
+.clip-label { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+.clip video { width: 100%; max-height: 60vh; background: #000; border-radius: 10px; }
 .summary { margin: 0; padding: 14px; overflow: auto; font: 12.5px/1.5 ui-monospace, Menlo, Consolas, monospace; white-space: pre; }
 .empty { color: var(--muted); text-align: center; padding: 30px 0; }
