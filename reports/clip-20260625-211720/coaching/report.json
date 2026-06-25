@@ -1,0 +1,69 @@
+{
+  "action_heatmap": {
+    "actions_binned": 0,
+    "cols": 6,
+    "grid": [
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    ],
+    "rows": 4
+  },
+  "domain": "martial_arts",
+  "fps": 5.0,
+  "generated_at": "2026-06-25T21:17:22Z",
+  "longest_segment_s": 3.4,
+  "peak_subject_speed_px_per_s": 85.33,
+  "segment_count": 1,
+  "segments": [
+    {
+      "actions": 0,
+      "end": 3.6,
+      "id": "exchange_001",
+      "length_s": 3.4,
+      "start": 0.2,
+      "subject_speed": {
+        "avg_px_per_s": 42.98,
+        "peak_px_per_s": 85.33,
+        "samples": 17
+      },
+      "tags": []
+    }
+  ],
+  "source": "view",
+  "surface": {
+    "height": 346,
+    "meters_per_pixel": null,
+    "width": 160
+  },
+  "total_play_s": 3.4
+}

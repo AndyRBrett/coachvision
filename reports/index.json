@@ -3,6 +3,36 @@
     {
       "clips": [
         {
+          "annotated": true,
+          "duration": 3.4,
+          "end": 3.6,
+          "id": "exchange_001",
+          "start": 0.2,
+          "tags": [],
+          "video": "reports/clip-20260625-211720/highlights/exchange_001.mp4"
+        }
+      ],
+      "detected_frames": 18,
+      "domain": "martial_arts",
+      "fps": 5.0,
+      "frame_size": [
+        160,
+        346
+      ],
+      "frames_processed": 26,
+      "id": "clip-20260625-211720",
+      "manifest": "reports/clip-20260625-211720/highlights/manifest.json",
+      "processed_at": "2026-06-25T21:18:31Z",
+      "rendered_count": 1,
+      "report": "reports/clip-20260625-211720/coaching/report.json",
+      "segment_count": 1,
+      "source": "view",
+      "summary": "reports/clip-20260625-211720/coaching/summary.txt",
+      "title": "view"
+    },
+    {
+      "clips": [
+        {
           "duration": 3.4,
           "end": 3.6,
           "id": "exchange_001",
@@ -47,5 +77,5 @@
       "summary": "reports/view-usp-drivesdk/coaching/summary.txt"
     }
   ],
-  "updated_at": "2026-06-25T15:34:19Z"
+  "updated_at": "2026-06-25T21:18:31Z"
 }
