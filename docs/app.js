@@ -40,6 +40,17 @@ async function getContent(path) {
   return res.text();
 }
 
+// Fetch a binary file (a rendered clip) via the contents API and hand back an
+// object URL so it streams into a <video> tag — works for public and private
+// repos alike. Caller revokes the URL when done.
+async function getBlobUrl(path) {
+  const c = cfg();
+  const url = `${API}/repos/${c.owner}/${c.repo}/contents/${path}?ref=${encodeURIComponent(c.branch)}`;
+  const res = await fetch(url, { headers: headers(true) });
+  if (!res.ok) return null;
+  return URL.createObjectURL(await res.blob());
+}
+
 async function dispatch(inputs) {
   const c = cfg();
   if (!c.token) throw new Error("A GitHub token is required to start a run (Settings).");
@@ -88,7 +99,7 @@ async function loadSessions() {
 function card(clip) {
   const b = el("button", "card");
   const h = el("h4");
-  h.appendChild(el("span", null, clip.id));
+  h.appendChild(el("span", null, clip.title || clip.id));
   const badge = el("span", `badge ${clip.domain === "volleyball" ? "volleyball" : ""}`,
     clip.domain === "volleyball" ? "volleyball" : "martial arts");
   h.appendChild(badge);
@@ -96,28 +107,63 @@ function card(clip) {
 
   const stats = el("div", "stats");
   const seg = clip.domain === "volleyball" ? "rallies" : "exchanges";
+  const playable = clip.rendered_count ?? (clip.clips || []).filter((c) => c.video).length;
   stats.innerHTML =
     `<span><b>${clip.segment_count ?? "–"}</b> ${seg}</span>` +
-    `<span><b>${clip.detected_frames ?? "–"}</b>/${clip.frames_processed ?? "–"} frames</span>` +
-    (clip.frame_size ? `<span>${clip.frame_size[0]}×${clip.frame_size[1]}</span>` : "");
+    (playable ? `<span>▶ <b>${playable}</b> clip${playable === 1 ? "" : "s"}</span>` : "") +
+    `<span><b>${clip.detected_frames ?? "–"}</b>/${clip.frames_processed ?? "–"} frames</span>`;
   b.appendChild(stats);
-  if (clip.source) b.appendChild(el("div", "when", clip.source));
   if (clip.processed_at) b.appendChild(el("div", "when", fmtDate(clip.processed_at)));
 
   b.addEventListener("click", () => openClip(clip));
   return b;
 }
 
+let _videoUrls = [];   // object URLs to revoke when the dialog closes
+
+function clearVideos() {
+  _videoUrls.forEach((u) => URL.revokeObjectURL(u));
+  _videoUrls = [];
+  $("#dlgVideos").innerHTML = "";
+}
+
 async function openClip(clip) {
-  $("#dlgTitle").textContent = clip.id;
+  $("#dlgTitle").textContent = clip.title || clip.id;
+  clearVideos();
   const body = $("#dlgBody");
   body.textContent = "Loading…";
   $("#clipDialog").showModal();
+
+  // Coaching summary text.
   try {
     const summary = await getContent(`reports/${clip.id}/coaching/summary.txt`);
     body.textContent = summary ?? "No summary found for this clip.";
   } catch (e) {
     body.textContent = `Could not load summary: ${e.message}`;
+  }
+
+  // Playable highlight clips. The catalog lists each segment; render a <video>
+  // for the ones that actually got encoded.
+  const playable = (clip.clips || []).filter((c) => c.video);
+  const wrap = $("#dlgVideos");
+  if (!playable.length) {
+    wrap.appendChild(el("p", "hint", "No rendered clips for this session yet."));
+    return;
+  }
+  for (const c of playable) {
+    const seg = el("div", "clip");
+    const label = (c.tags && c.tags.length ? c.tags.join(", ") : c.id) + `  ·  ${c.duration}s`;
+    seg.appendChild(el("div", "clip-label", label));
+    const video = document.createElement("video");
+    video.controls = true;
+    video.playsInline = true;
+    video.preload = "metadata";
+    seg.appendChild(video);
+    wrap.appendChild(seg);
+    getBlobUrl(c.video).then((u) => {
+      if (u) { _videoUrls.push(u); video.src = u; }
+      else seg.appendChild(el("div", "hint", "(clip unavailable)"));
+    });
   }
 }
 
@@ -131,6 +177,8 @@ async function runAnalysis() {
   };
   const url = $("#clipUrl").value.trim();
   const path = $("#clipPath").value.trim();
+  const name = $("#sessionName").value.trim();
+  if (name) inputs.name = name;
   if (url) inputs.clip_url = url;
   else if (path) inputs.clip_path = path;
   else { setMsg(msg, "Provide a video URL or a repo path.", "err"); return; }
@@ -220,6 +268,7 @@ function init() {
   $("#saveBtn").addEventListener("click", saveSettings);
   $("#testBtn").addEventListener("click", testConnection);
   $("#dlgClose").addEventListener("click", () => $("#clipDialog").close());
+  $("#clipDialog").addEventListener("close", clearVideos);
 
   loadSettings();
   loadSessions();
