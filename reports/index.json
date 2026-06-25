@@ -1,0 +1,22 @@
+{
+  "clips": [
+    {
+      "detected_frames": 18,
+      "domain": "martial_arts",
+      "fps": 5.0,
+      "frame_size": [
+        160,
+        346
+      ],
+      "frames_processed": 26,
+      "id": "view-usp-drivesdk",
+      "manifest": "reports/view-usp-drivesdk/highlights/manifest.json",
+      "processed_at": "2026-06-25T14:42:10Z",
+      "report": "reports/view-usp-drivesdk/coaching/report.json",
+      "segment_count": 1,
+      "source": "view?usp=drivesdk",
+      "summary": "reports/view-usp-drivesdk/coaching/summary.txt"
+    }
+  ],
+  "updated_at": "2026-06-25T14:42:10Z"
+}

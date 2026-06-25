@@ -1,0 +1,29 @@
+{
+  "clips": [
+    {
+      "duration": 3.4,
+      "end": 3.6,
+      "ffmpeg_cmd": [
+        "ffmpeg",
+        "-y",
+        "-ss",
+        "0.000",
+        "-i",
+        "view?usp=drivesdk",
+        "-t",
+        "4.400",
+        "reports/view-usp-drivesdk/highlights/exchange_001.mp4"
+      ],
+      "id": "exchange_001",
+      "output": "reports/view-usp-drivesdk/highlights/exchange_001.mp4",
+      "renderable": true,
+      "start": 0.2,
+      "tags": []
+    }
+  ],
+  "domain": "martial_arts",
+  "fps": 5.0,
+  "generated_at": "2026-06-25T14:42:10Z",
+  "segment_count": 1,
+  "source": "view?usp=drivesdk"
+}
