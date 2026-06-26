@@ -32,6 +32,23 @@ class TestSelectFighters(unittest.TestCase):
         people = [_fighter([400 + i, 400, 480 + i, 760], fid=i) for i in range(4)]
         self.assertEqual(len(fa.select_fighters(people, 1000, 1000)), 2)
 
+    def test_excludes_central_referee(self):
+        # Two fighters clashing (adjacent boxes) plus a same-size referee standing
+        # apart. The engaged pair is the two fighters; the ref is dropped.
+        a = _fighter([380, 350, 520, 850], fid=1)
+        b = _fighter([500, 350, 640, 850], fid=2)
+        ref = _fighter([790, 350, 910, 850], fid=3)
+        picked = fa.select_fighters([a, b, ref], 1000, 1000)
+        self.assertEqual(sorted(p["id"] for p in picked), [1, 2])
+
+    def test_drops_short_background_row(self):
+        # A row of small, short background people behind two big fighters.
+        a = _fighter([300, 200, 470, 880], fid=1)
+        b = _fighter([520, 200, 690, 880], fid=2)
+        crowd = [_fighter([50 + i * 60, 100, 90 + i * 60, 180], fid=10 + i) for i in range(6)]
+        picked = fa.select_fighters([a, b] + crowd, 1000, 1000)
+        self.assertEqual(sorted(p["id"] for p in picked), [1, 2])
+
     def test_empty(self):
         self.assertEqual(fa.select_fighters([], 1000, 1000), [])
 

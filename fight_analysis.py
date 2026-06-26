@@ -63,31 +63,63 @@ def _box_area(box):
     return max(0.0, x2 - x1) * max(0.0, y2 - y1)
 
 
-def select_fighters(persons, frame_w, frame_h, max_fighters=MAX_FIGHTERS, min_area_frac=0.15):
-    """Pick the fighters from all detected people: biggest + most central.
+def select_fighters(persons, frame_w, frame_h, max_fighters=MAX_FIGHTERS,
+                    min_area_frac=0.20, min_height_frac=0.30):
+    """Pick the fighters from all detected people: the engaged pair.
 
-    Each person is a dict with at least ``box`` ([x1,y1,x2,y2]). Score rewards
-    box area and penalises distance from frame centre, so a large fighter in the
-    middle outranks a small bystander at the edge. People much smaller than the
-    biggest (< ``min_area_frac`` of its area) are dropped as background. Returns
-    up to ``max_fighters`` persons, highest score first.
+    Fighters share two traits a referee and the crowd don't: they're *large* in
+    frame and *engaged with each other* -- close together, clashing. We use both:
+
+      1. Keep only people big enough to be a fighter -- box height at least
+         ``min_height_frac`` of the frame AND area at least ``min_area_frac`` of
+         the biggest detection. This drops ringside/background people outright
+         (they're small) and most of the time the referee too (often turned/
+         crouched, so shorter than the upright fighters).
+      2. If more candidates than slots remain (e.g. two fighters + a referee who
+         is also large), keep the most *engaged pair*: the two whose boxes are
+         closest together, rewarding combined size. A referee standing off the
+         clash is farther from either fighter than they are from each other, so
+         the pair selection drops him.
+
+    Each person is a dict with at least ``box`` ([x1,y1,x2,y2]). Returns up to
+    ``max_fighters`` persons, biggest first.
     """
     if not persons:
         return []
-    cx, cy = frame_w / 2.0, frame_h / 2.0
-    diag = math.hypot(frame_w, frame_h) or 1.0
     biggest = max(_box_area(p["box"]) for p in persons) or 1.0
+    diag = math.hypot(frame_w, frame_h) or 1.0
 
-    scored = []
+    candidates = []
     for p in persons:
-        area = _box_area(p["box"])
-        if area < min_area_frac * biggest:
-            continue  # background / far-away person
-        bx, by = _box_center(p["box"])
-        centrality = 1.0 - min(1.0, math.hypot(bx - cx, by - cy) / diag)
-        scored.append((area * (0.5 + centrality), p))
-    scored.sort(key=lambda s: s[0], reverse=True)
-    return [p for _, p in scored[:max_fighters]]
+        box = p["box"]
+        if (box[3] - box[1]) < min_height_frac * frame_h:
+            continue  # too short -> background / ringside / crouched non-fighter
+        if _box_area(box) < min_area_frac * biggest:
+            continue  # much smaller than the principals -> background
+        candidates.append(p)
+
+    candidates.sort(key=lambda p: _box_area(p["box"]), reverse=True)
+    if len(candidates) <= max_fighters:
+        return candidates
+
+    # Too many large people (fighters + a referee/cornerman). For the usual two
+    # fighters, take the most engaged pair -- big and close together. Otherwise
+    # fall back to biggest-first (already sorted).
+    if max_fighters != 2:
+        return candidates[:max_fighters]
+
+    best_pair, best_score = None, -1.0
+    for i in range(len(candidates)):
+        ca = _box_center(candidates[i]["box"])
+        for j in range(i + 1, len(candidates)):
+            cb = _box_center(candidates[j]["box"])
+            dist = math.hypot(ca[0] - cb[0], ca[1] - cb[1]) / diag
+            combined = _box_area(candidates[i]["box"]) + _box_area(candidates[j]["box"])
+            score = combined / (1.0 + 3.0 * dist)   # big + close ranks highest
+            if score > best_score:
+                best_pair, best_score = (candidates[i], candidates[j]), score
+    pair = sorted(best_pair, key=lambda p: _box_area(p["box"]), reverse=True)
+    return pair
 
 
 def _kp_xy(kpts, idx):

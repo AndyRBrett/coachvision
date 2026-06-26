@@ -18,8 +18,10 @@ import importlib.util
 import json
 import os
 import re
+import subprocess
 from datetime import datetime, timezone
 
+import coach_feedback
 import coaching
 import decode_video
 import domains
@@ -68,6 +70,67 @@ def update_index(reports_dir, entry):
         json.dump(index, fh, indent=2, sort_keys=True)
         fh.write("\n")
     return index_path
+
+
+def _coaching_stills(manifest, work_dir, n=coach_feedback.MAX_STILLS):
+    """Grab one annotated frame from up to ``n`` rendered clips, for the LLM.
+
+    Best-effort: returns the still paths that ffmpeg actually wrote (missing
+    ffmpeg or a bad clip is skipped). The clips here are the fighters-only
+    annotated highlights, so the frames already show the tracking + strike marks.
+    """
+    stills = []
+    for clip in manifest.get("clips", []):
+        if len(stills) >= n:
+            break
+        vid = clip.get("output")
+        if not (clip.get("rendered") and vid and os.path.exists(vid)):
+            continue
+        still = os.path.join(work_dir, f"still_{clip['id']}.jpg")
+        try:
+            subprocess.run(
+                ["ffmpeg", "-y", "-loglevel", "error", "-i", vid,
+                 "-frames:v", "1", "-q:v", "3", still],
+                check=True,
+            )
+            if os.path.exists(still):
+                stills.append(still)
+        except Exception as exc:  # noqa: BLE001 -- stills are best-effort
+            print(f"still extraction skipped for {clip['id']}: {exc}")
+    return stills
+
+
+def _write_feedback(result, manifest, coaching_dir, work_dir, domain):
+    """Generate Claude coaching feedback (if a key is set) and save it.
+
+    Returns the feedback file path if written, else None. Cost-gated and
+    best-effort: no ANTHROPIC_API_KEY -> skipped silently; any error is logged
+    and never fatal to the run.
+    """
+    dom = domains.get_domain(domain)
+    stills = _coaching_stills(manifest, work_dir)
+    try:
+        feedback = coach_feedback.generate_feedback(
+            result["tracking"], stills,
+            role=f"{dom.label.lower()} coach",
+            segment_count=result["metrics"].get("segment_count"),
+        )
+    except Exception as exc:  # noqa: BLE001 -- feedback is best-effort
+        print(f"coaching feedback skipped: {exc}")
+        feedback = None
+    finally:
+        for s in stills:
+            try:
+                os.remove(s)
+            except OSError:
+                pass
+    if not feedback:
+        return None
+    os.makedirs(coaching_dir, exist_ok=True)
+    path = os.path.join(coaching_dir, "feedback.md")
+    with open(path, "w") as fh:
+        fh.write(feedback.rstrip() + "\n")
+    return path
 
 
 def _run_pose(src_video, title, fps, meters_per_pixel, output_dir, domain, work_dir, cleanup):
@@ -194,6 +257,11 @@ def process(
 
     highlights.write_manifest(manifest, os.path.join(output_dir, "manifest.json"))
 
+    # Coaching feedback from Claude (vision over the annotated stills + stats).
+    # Pose path only -- the stills need to show the fighter tracking. Cost-gated:
+    # no ANTHROPIC_API_KEY -> skipped. Best-effort: never fatal to the run.
+    feedback_path = _write_feedback(result, manifest, coaching_dir, work_dir, domain) if use_pose else None
+
     # Intermediates (decoded frames, normalized/annotated working videos) are not
     # artifacts worth committing.
     for path in cleanup:
@@ -229,6 +297,7 @@ def process(
         "frame_size": [decoded["width"], decoded["height"]],
         "report": os.path.join(clip_dir, "coaching", "report.json"),
         "summary": os.path.join(clip_dir, "coaching", "summary.txt"),
+        "feedback": feedback_path,  # Claude coaching feedback, or None if skipped
         "manifest": os.path.join(output_dir, "manifest.json"),
         "clips": clips,
     }
