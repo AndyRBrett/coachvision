@@ -1,0 +1,72 @@
+{
+  "action_heatmap": {
+    "actions_binned": 5,
+    "cols": 6,
+    "grid": [
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        2,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        1,
+        0
+      ]
+    ],
+    "rows": 4
+  },
+  "domain": "martial_arts",
+  "fps": 5.0,
+  "generated_at": "2026-06-26T18:50:55Z",
+  "longest_segment_s": 53.8,
+  "peak_subject_speed_px_per_s": 1733.92,
+  "segment_count": 1,
+  "segments": [
+    {
+      "actions": 5,
+      "end": 53.8,
+      "id": "exchange_001",
+      "length_s": 53.8,
+      "start": 0.0,
+      "subject_speed": {
+        "avg_px_per_s": 246.63,
+        "peak_px_per_s": 1733.92,
+        "samples": 269
+      },
+      "tags": [
+        "hand_strike",
+        "leg_strike"
+      ]
+    }
+  ],
+  "source": "view",
+  "surface": {
+    "height": 360,
+    "meters_per_pixel": null,
+    "width": 640
+  },
+  "total_play_s": 53.8
+}

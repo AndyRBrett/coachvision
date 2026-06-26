@@ -1,0 +1,23 @@
+{
+  "clips": [
+    {
+      "annotated": true,
+      "duration": 53.8,
+      "end": 53.8,
+      "id": "exchange_001",
+      "output": "reports/clip-20260626-185015/highlights/exchange_001.mp4",
+      "renderable": true,
+      "rendered": true,
+      "start": 0.0,
+      "tags": [
+        "hand_strike",
+        "leg_strike"
+      ]
+    }
+  ],
+  "domain": "martial_arts",
+  "fps": 5.0,
+  "generated_at": "2026-06-26T18:50:55Z",
+  "segment_count": 1,
+  "source": "view"
+}
