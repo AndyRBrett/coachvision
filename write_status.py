@@ -46,13 +46,64 @@ def _days_since(last_footage_at, now: datetime):
 
 
 def load_results() -> dict:
-    """Read the pipeline's results JSON, or {} if none exists (idle week)."""
+    """Read the pipeline's results JSON, or {} if none exists (idle week).
+
+    The dispatch workflow writes per-clip results under reports/<id>/results/,
+    not to the legacy results/metrics.json. When the legacy path is absent or
+    empty, fall back to reports/index.json so the status accurately reflects
+    footage processed via the dispatch workflow.
+    """
     path = os.environ.get("COACHVISION_RESULTS_PATH", DEFAULT_RESULTS_PATH)
     try:
         with open(path) as fh:
-            return json.load(fh)
+            data = json.load(fh)
+        if data.get("footage_processed", 0) > 0 or data.get("frames_processed", 0) > 0:
+            return data
     except FileNotFoundError:
+        pass
+
+    return _results_from_index()
+
+
+DEFAULT_INDEX_PATH = "reports/index.json"
+
+
+def _results_from_index() -> dict:
+    """Derive footage stats from reports/index.json (dispatch-workflow path).
+
+    The dispatch workflow (process-footage.yml) writes coaching reports under
+    reports/<clip>/ and updates the index, but does not write to the legacy
+    results/metrics.json. Reading the index gives an accurate picture of what
+    has actually been processed so overseer-status.json is not misleadingly idle.
+    """
+    index_path = os.environ.get("COACHVISION_INDEX_PATH", DEFAULT_INDEX_PATH)
+    try:
+        with open(index_path) as fh:
+            index = json.load(fh)
+    except (FileNotFoundError, ValueError):
         return {}
+
+    clips = index.get("clips", [])
+    if not clips:
+        return {}
+
+    total_frames = sum(c.get("frames_processed", 0) for c in clips)
+    total_detected = sum(c.get("detected_frames", 0) for c in clips)
+
+    # Most recent clip by processed_at timestamp.
+    processed_times = [c.get("processed_at") for c in clips if c.get("processed_at")]
+    last_footage_at = max(processed_times) if processed_times else None
+
+    return {
+        "footage_processed": len(clips),
+        "frames_processed": total_frames,
+        "detected_frames": total_detected,
+        "expected_frames": total_frames,
+        "actual_frames": total_frames,
+        "failed_frames": 0,
+        "errors": [],
+        "last_footage_at": last_footage_at,
+    }
 
 
 def load_pending_footage() -> int:
