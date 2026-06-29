@@ -27,7 +27,14 @@
     <section id="view-sessions" class="view is-active">
       <div class="row">
         <h2>Sessions</h2>
-        <button id="refreshBtn" class="ghost">Refresh</button>
+        <div class="row" style="gap:8px">
+          <select id="sportFilter" class="sport-filter">
+            <option value="">All sports</option>
+            <option value="martial_arts">Martial arts</option>
+            <option value="volleyball">Volleyball</option>
+          </select>
+          <button id="refreshBtn" class="ghost">Refresh</button>
+        </div>
       </div>
       <p id="sessionsMsg" class="msg"></p>
       <div id="gallery" class="gallery"></div>

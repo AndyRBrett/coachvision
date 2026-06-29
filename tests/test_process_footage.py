@@ -89,13 +89,15 @@ class TestProcessEndToEnd(unittest.TestCase):
         self.assertGreaterEqual(entry["segment_count"], 1)
 
     def test_generic_label_gets_timestamp_id(self):
-        # A Drive "...//view" tail slugs to a useless "view" -> use a timestamp.
+        # A Drive "...//view" tail slugs to a useless "view" -> use a timestamp id
+        # AND a matching timestamp title (not the raw "view" slug).
         decode_video.decode_to_pgm_gz = self._fake_decode("martialarts_clip.pgm.gz")
         with tempfile.TemporaryDirectory() as reports:
             entry = process_footage.process(
                 os.path.join(reports, "x"), domain="martial_arts",
                 reports_dir=reports, source_label="view")
             self.assertTrue(entry["id"].startswith("clip-"), entry["id"])
+            self.assertEqual(entry["title"], entry["id"])
 
     def test_name_sets_title_and_id(self):
         decode_video.decode_to_pgm_gz = self._fake_decode("martialarts_clip.pgm.gz")

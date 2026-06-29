@@ -195,10 +195,12 @@ def process(
     ``reports/<id>/highlights/{manifest.json,<segment>.mp4}``,
     ``reports/<id>/results/metrics.json``.
     """
-    clip_id = slugify(name or source_label or src_video)
-    if clip_id in _GENERIC_IDS:
+    _raw_slug = slugify(name or source_label or src_video)
+    if _raw_slug in _GENERIC_IDS:
         clip_id = "clip-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    title = name or source_label or clip_id
+    else:
+        clip_id = _raw_slug
+    title = name or (source_label if _raw_slug not in _GENERIC_IDS else clip_id)
     clip_dir = os.path.join(reports_dir, clip_id)
     work_dir = work_dir or clip_dir
     os.makedirs(work_dir, exist_ok=True)

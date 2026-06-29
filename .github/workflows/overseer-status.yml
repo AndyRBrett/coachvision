@@ -15,7 +15,7 @@ permissions:
 # to switch the whole automated pipeline -- detection, self-test, and status --
 # without touching code. Defaults to volleyball.
 env:
-  COACHVISION_DOMAIN: ${{ vars.COACHVISION_DOMAIN || 'volleyball' }}
+  COACHVISION_DOMAIN: ${{ vars.COACHVISION_DOMAIN || 'martial_arts' }}
 
 jobs:
   write-status:

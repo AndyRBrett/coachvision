@@ -86,7 +86,8 @@ async function loadSessions() {
       return;
     }
     const index = JSON.parse(text);
-    const clips = index.clips || [];
+    const sport = $("#sportFilter") ? $("#sportFilter").value : "";
+    const clips = (index.clips || []).filter((c) => !sport || c.domain === sport);
     msg.textContent = clips.length ? `${clips.length} session(s)` : "";
     if (!clips.length) gallery.appendChild(el("p", "empty", "No sessions yet."));
     for (const clip of clips) gallery.appendChild(card(clip));
@@ -100,7 +101,7 @@ function card(clip) {
   const b = el("button", "card");
   const h = el("h4");
   h.appendChild(el("span", null, clip.title || clip.id));
-  const badge = el("span", `badge ${clip.domain === "volleyball" ? "volleyball" : ""}`,
+  const badge = el("span", `badge ${clip.domain === "volleyball" ? "volleyball" : "martial-arts"}`,
     clip.domain === "volleyball" ? "volleyball" : "martial arts");
   h.appendChild(badge);
   b.appendChild(h);
@@ -307,6 +308,7 @@ function switchView(name) {
 function init() {
   document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => switchView(t.dataset.view)));
   $("#refreshBtn").addEventListener("click", loadSessions);
+  $("#sportFilter").addEventListener("change", loadSessions);
   $("#runsBtn").addEventListener("click", loadRuns);
   $("#analyzeBtn").addEventListener("click", runAnalysis);
   $("#saveBtn").addEventListener("click", saveSettings);
