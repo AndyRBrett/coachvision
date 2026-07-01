@@ -6,50 +6,53 @@ PWA). Reviewed for injection, secret handling, SSRF, XSS, and unsafe use of
 `os.system`/`shell=True` usage exists anywhere in the codebase; every
 `subprocess.run` call uses an argv list, never a shell string.
 
+Findings 1-3 below have been **fixed**.
+
 ## Findings
 
-### 1. Medium — unrestricted URL fetch (SSRF / local-file read) in `decode_video.py`
+### 1. Fixed — unrestricted URL fetch (SSRF / local-file read) in `decode_video.py`
 
-`resolve_source()` → `_download()` (`decode_video.py:84-100`) passes
-`clip_url` straight to `urllib.request.urlopen()` with no scheme or host
-allowlist. `urlopen` honors any registered handler, including `file://`, so a
-`workflow_dispatch` caller can point `clip_url` at `file:///etc/passwd` (or
-any path on the runner) or at an internal-only address. ffmpeg will fail to
-decode the result, but its stderr (truncated to the last 500 bytes,
-`decode_video.py:67`) is echoed into the Actions log, giving a limited file/
-SSRF read primitive. On GitHub-hosted runners the blast radius is small
-(ephemeral, no interesting local secrets beyond what the job already has in
-env); on a **self-hosted runner** this could reach internal services or cloud
-metadata endpoints (e.g. `169.254.169.254`).
+`resolve_source()` → `_download()` passed `clip_url` straight to
+`urllib.request.urlopen()` with no scheme or host allowlist. `urlopen` honors
+any registered handler, including `file://`, so a `workflow_dispatch` caller
+could point `clip_url` at `file:///etc/passwd` (or any path on the runner) or
+at an internal-only address; ffmpeg's failure stderr (truncated to 500 bytes)
+would then leak into the Actions log — a limited file-read/SSRF primitive,
+worse on a **self-hosted runner** where it could reach internal services or a
+cloud metadata endpoint (e.g. `169.254.169.254`).
 
-Fix: restrict `clip_url` to `http`/`https`, and if self-hosted runners are
-ever used, block link-local/private-IP destinations (and disable redirects to
-them).
+Fix (`decode_video.py`): `_validate_download_url()` now rejects any scheme
+other than `http`/`https` and resolves the hostname, rejecting
+private/loopback/link-local/reserved/multicast addresses. A
+`_SafeRedirectHandler` re-validates every redirect hop against the same
+rules, so an initially-valid URL can't redirect its way past the check.
 
-### 2. Low — incomplete ffmpeg `drawtext` escaping for tag text
+### 2. Fixed — incomplete ffmpeg `drawtext` escaping for tag text
 
-`ffmpeg_trim_cmd()` (`highlights.py:136-160`) escapes only `\`, `:`, and `'`
-before interpolating tag text into the `drawtext` filter string. Other
-characters meaningful to ffmpeg's filtergraph syntax (`,`, `;`, `[`, `]`,
-`%`) are not escaped. `tag_segment()` passes through *unknown* event types
-verbatim (`highlights.py:112-133`), so a hand-crafted `tracking.json`/events
-sidecar with a malicious `type` string could break out of the filter
-argument. In the automated `process-footage` workflow this isn't reachable
-(event types there are the fixed `hand_strike`/`leg_strike` strings from
-`fight_analysis.py`, and Cosmos-derived tags are vocabulary-restricted in
-`merge_tags`), but the standalone `highlights.py` CLI accepts arbitrary
-tracking JSON directly. Escape the full set of ffmpeg-special characters, or
-validate tags against the domain vocabulary before use.
+`ffmpeg_trim_cmd()` escaped only `\`, `:`, and `'` before interpolating tag
+text into the `drawtext` filter string, leaving other filtergraph-special
+characters (`,`, `;`, `[`, `]`, `%`) unescaped. `tag_segment()` passes through
+*unknown* event types verbatim, so a hand-crafted `tracking.json`/events
+sidecar fed to the standalone `highlights.py` CLI could break out of the
+filter argument. (Not reachable via the automated `process-footage` workflow,
+where event types are always the fixed `hand_strike`/`leg_strike` strings or
+vocabulary-restricted Cosmos tags.)
 
-### 3. Low — `clip_path` accepts unrestricted filesystem paths
+Fix (`highlights.py`): replaced character-by-character escaping with a
+whitelist — `_sanitize_drawtext_label()` keeps only
+`[A-Za-z0-9 ,_-]` and drops everything else, which covers the known tag
+vocabulary exactly and removes the whole escaping-correctness question for
+anything else that ends up there.
 
-`process-footage.yml`'s `clip_path` input and `decode_video.resolve_source()`
-only check `os.path.isfile()` — there's no confinement to `drop/` or the repo
-root. Anyone able to trigger the workflow (already requires Actions-write on
-the repo) can point ffmpeg at arbitrary files on the runner. Low impact since
-it requires the same privilege as editing the workflow directly, but
-consider confining `clip_path` to a subtree (e.g. reject paths outside
-`drop/` after `os.path.realpath` normalization) for defense in depth.
+### 3. Fixed — `clip_path` accepted unrestricted filesystem paths
+
+`resolve_source()` only checked `os.path.isfile()` — there was no confinement
+to the repo root, so a workflow_dispatch caller could point ffmpeg at
+arbitrary files on the runner via `../../etc/passwd` or an absolute path.
+
+Fix (`decode_video.py`): `_require_within_cwd()` resolves the real path and
+rejects anything outside the current working directory (the repo root, as
+checked out by the workflow) before it's used.
 
 ### 4. Informational — GitHub PAT stored in `localStorage` (by design)
 

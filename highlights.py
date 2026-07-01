@@ -42,6 +42,7 @@ Tracking input schema (JSON)
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 from datetime import datetime, timezone
@@ -133,6 +134,21 @@ def tag_segment(segment, events, known_tags=KNOWN_TAGS):
     return sorted(tags, key=sort_key)
 
 
+# Characters kept in a drawtext label; everything else is dropped. Rather than
+# trying to correctly escape every character ffmpeg's filtergraph parser
+# treats specially (backslash, single quote, colon, comma, semicolon,
+# brackets, percent -- whose interactions get subtle once the value is also
+# single-quoted), whitelist a safe set. Tag vocabulary is always plain words
+# (letters/digits/underscores/hyphens), so this never affects legitimate tags
+# and closes off the whole escaping-correctness question for anything else
+# (e.g. an unknown event type from a hand-fed tracking JSON) that ends up here.
+_DRAWTEXT_UNSAFE = re.compile(r"[^A-Za-z0-9 ,_-]")
+
+
+def _sanitize_drawtext_label(label):
+    return _DRAWTEXT_UNSAFE.sub("", label)
+
+
 def ffmpeg_trim_cmd(source, start, end, out_path, tags=None, pad_s=DEFAULT_PAD_S):
     """Build an ffmpeg command that trims [start-pad, end+pad] and overlays tags.
 
@@ -145,12 +161,10 @@ def ffmpeg_trim_cmd(source, start, end, out_path, tags=None, pad_s=DEFAULT_PAD_S
     clip_start = max(0.0, start - pad_s)
     duration = (end + pad_s) - clip_start
     cmd = ["ffmpeg", "-y", "-ss", f"{clip_start:.3f}", "-i", source, "-t", f"{duration:.3f}"]
-    label = ", ".join(tags or [])
+    label = _sanitize_drawtext_label(", ".join(tags or []))
     if label:
-        # Escape characters special to ffmpeg's drawtext filter.
-        safe = label.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
         drawtext = (
-            f"drawtext=text='{safe}':x=20:y=20:fontsize=28:fontcolor=white:"
+            f"drawtext=text='{label}':x=20:y=20:fontsize=28:fontcolor=white:"
             "box=1:boxcolor=black@0.5:boxborderw=8"
         )
         cmd += ["-vf", drawtext]

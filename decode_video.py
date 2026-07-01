@@ -18,13 +18,16 @@ library. The actual ffmpeg invocation is isolated in ``_run_ffmpeg`` so the rest
 is unit-testable without ffmpeg installed.
 """
 import gzip
+import ipaddress
 import os
 import re
 import shutil
+import socket
 import subprocess
 import tempfile
 import urllib.error
 import urllib.request
+from urllib.parse import urlparse
 
 import detect
 
@@ -81,15 +84,63 @@ def direct_download_url(url):
     return url
 
 
+_ALLOWED_URL_SCHEMES = {"http", "https"}
+
+
+def _validate_download_url(url):
+    """Reject URLs that aren't safe to fetch from a CI runner.
+
+    ``clip_url`` comes straight from a workflow_dispatch input, so it must not
+    be trusted as a plain "fetch anything" target: only http/https are
+    permitted (blocking ``file://`` and other schemes urllib would otherwise
+    happily open), and the hostname must not resolve to a
+    private/loopback/link-local/reserved address -- the classic SSRF guard
+    against reaching internal services or a cloud metadata endpoint (e.g.
+    169.254.169.254) if this ever ran on a self-hosted runner.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in _ALLOWED_URL_SCHEMES:
+        raise ValueError(
+            f"unsupported URL scheme {parsed.scheme!r} in {url!r}; only http/https are allowed"
+        )
+    if not parsed.hostname:
+        raise ValueError(f"URL has no host: {url!r}")
+    try:
+        infos = socket.getaddrinfo(parsed.hostname, None)
+    except socket.gaierror as exc:
+        raise ValueError(f"could not resolve host {parsed.hostname!r}: {exc}") from exc
+    for *_rest, sockaddr in infos:
+        ip = ipaddress.ip_address(sockaddr[0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+            raise ValueError(
+                f"refusing to fetch {url!r}: host {parsed.hostname!r} resolves to "
+                f"non-public address {ip}"
+            )
+
+
+class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Re-validates every redirect hop against the same scheme/host rules.
+
+    Without this, an initial URL could pass validation and then redirect to a
+    ``file://`` or internal address, defeating ``_validate_download_url``.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _validate_download_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def _download(url, dest):
     """Fetch ``url`` to ``dest`` with a browser User-Agent, following redirects.
 
     Raises a clear RuntimeError on HTTP errors so the workflow log says *why*
     (e.g. a private/Drive-view link) instead of a bare urllib traceback.
     """
+    _validate_download_url(url)
+    opener = urllib.request.build_opener(_SafeRedirectHandler)
     req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp, open(dest, "wb") as fh:
+        with opener.open(req, timeout=120) as resp, open(dest, "wb") as fh:
             shutil.copyfileobj(resp, fh)
     except urllib.error.HTTPError as exc:
         raise RuntimeError(
@@ -129,12 +180,27 @@ def decode_to_pgm_gz(src, out_path, fps=DEFAULT_FPS, width=DEFAULT_WIDTH):
     }
 
 
+def _require_within_cwd(path):
+    """Reject a clip path that escapes the current working directory.
+
+    ``clip_path`` is meant to point at footage already committed under the
+    repo (e.g. ``drop/spar.mp4``, run from the repo root). Without this check
+    a workflow_dispatch caller could point ffmpeg at arbitrary files elsewhere
+    on the runner via ``../../etc/passwd`` or an absolute path.
+    """
+    base = os.path.realpath(os.getcwd())
+    real = os.path.realpath(path)
+    if os.path.commonpath([base, real]) != base:
+        raise ValueError(f"clip path {path!r} is outside the working directory")
+
+
 def resolve_source(clip_path=None, clip_url=None, work_dir=None):
     """Return a local video path from either a repo path or a URL to download.
 
     Exactly one of ``clip_path`` / ``clip_url`` should be given. Downloads land
     in ``work_dir`` (a temp dir when omitted). Raises ValueError if neither is
-    provided or a given local path is missing.
+    provided, a given local path is missing, or a local path escapes the
+    working directory.
     """
     if clip_url:
         work_dir = work_dir or tempfile.mkdtemp(prefix="coachvision_")
@@ -143,6 +209,7 @@ def resolve_source(clip_path=None, clip_url=None, work_dir=None):
     if clip_path:
         if not os.path.isfile(clip_path):
             raise ValueError(f"clip not found: {clip_path}")
+        _require_within_cwd(clip_path)
         return clip_path
     raise ValueError("provide a clip path or a clip URL")
 
