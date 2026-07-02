@@ -5,6 +5,11 @@ name: fetch-assets
 
 on:
   workflow_dispatch:
+  # Session tokens can't POST workflow dispatches, so also fire when this file
+  # itself changes on a branch push (effectively a one-shot trigger).
+  push:
+    paths:
+      - ".github/workflows/fetch-assets.yml"
 
 permissions:
   contents: write
