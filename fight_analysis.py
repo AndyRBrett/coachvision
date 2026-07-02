@@ -26,6 +26,7 @@ import subprocess
 import tempfile
 
 DEFAULT_MODEL = "yolov8n-pose.pt"
+MODELS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
 DEFAULT_FPS = 10.0
 DEFAULT_WIDTH = 640          # normalize to this width before inference
 DEFAULT_CONF = 0.25
@@ -42,6 +43,23 @@ LEG_KPS = (L_ANKLE, R_ANKLE)
 # scale-invariant. A snap above this with a refractory gap counts as one strike.
 STRIKE_SPEED_THRESH = 2.5
 STRIKE_REFRACTORY_S = 0.25
+
+# Fighter-slot continuity tracking. Per-frame re-selection lets the "fighters"
+# jump to ringside people whenever the real pair clinches (one merged detection)
+# or separates between exchanges. Instead the two fighters live in two *slots*
+# that are matched frame-to-frame (by detector track id first, then proximity),
+# coast briefly through occlusions, and only fully re-seed after both are lost.
+MATCH_GATE_HEIGHTS = 0.7     # a candidate matches a slot within this many heights
+TRACK_MEMORY_S = 1.0         # a lost slot coasts (keeps its last box) this long
+CAND_MIN_HEIGHT_FRAC = 0.22  # softer than seeding: continuity keeps identity honest
+REFILL_GATE_HEIGHTS = 2.5    # a re-entering fighter must be this near the opponent
+STATIC_WINDOW_S = 3.0        # a slot whose box wanders less than ...
+STATIC_MIN_MOVE_HEIGHTS = 0.25  # ... this over the window is a spectator: drop it
+
+# Exchange segmentation: the pair is "engaged" (an exchange is live) when the
+# fighters are within striking range of each other; wandering apart between
+# points reads as the gap between exchanges.
+ENGAGE_DIST_HEIGHTS = 1.2    # centers within this many mean heights = engaged
 
 # Skeleton edges for drawing (COCO-17).
 _SKELETON = [
@@ -122,6 +140,160 @@ def select_fighters(persons, frame_w, frame_h, max_fighters=MAX_FIGHTERS,
     return pair
 
 
+def _new_slot(person, t, trail=None):
+    """Slot state for a matched person; ``trail`` carries the wander history."""
+    cx, cy = _box_center(person["box"])
+    trail = [e for e in (trail or []) if t - e[0] <= STATIC_WINDOW_S]
+    trail.append((t, cx, cy))
+    return {"box": person["box"], "kpts": person["kpts"], "tid": person.get("id"),
+            "last_t": t, "trail": trail}
+
+
+def _trail_static(trail, height):
+    """True when a center-point trail has barely wandered over its window.
+
+    Fighters travel (even between exchanges they walk back to position);
+    someone whose center stays put for seconds is ringside furniture.
+    """
+    if not trail or (trail[-1][0] - trail[0][0]) < STATIC_WINDOW_S * 0.8:
+        return False   # not enough history to judge
+    xs = [e[1] for e in trail]
+    ys = [e[2] for e in trail]
+    wander = math.hypot(max(xs) - min(xs), max(ys) - min(ys))
+    return wander < STATIC_MIN_MOVE_HEIGHTS * max(1.0, height)
+
+
+def _slot_static(slot, now):
+    trail = [e for e in slot.get("trail", []) if now - e[0] <= STATIC_WINDOW_S]
+    return _trail_static(trail, slot["box"][3] - slot["box"][1])
+
+
+def track_fighter_slots(person_frames, frame_w, frame_h):
+    """Assign detected people to two stable fighter slots across frames.
+
+    ``person_frames`` is [{"t": seconds, "persons": [{id, box, kpts}, ...]}].
+    Slots are seeded with :func:`select_fighters` (the engaged-pair heuristic),
+    then carried forward frame-to-frame: a slot re-matches its person by the
+    detector's track id when it survives, else by center proximity within
+    ``MATCH_GATE_HEIGHTS``. A slot that matches nothing coasts on its last box
+    for ``TRACK_MEMORY_S`` (clinches often merge the pair into one detection),
+    after which it empties; when both slots are empty the pair is re-seeded.
+
+    Returns records [{"t", "fighters", "slot_boxes"}]: ``fighters`` are this
+    frame's *matched* detections with stable ids 0/1 (used for strikes and the
+    overlay -- a coasting slot has no fresh keypoints so contributes neither);
+    ``slot_boxes`` is [box-or-None, box-or-None] including coasting slots, for
+    engagement/segmentation.
+    """
+    slots = [None, None]   # {"box","kpts","tid","last_t","trail"} or None
+    id_trails = {}         # detector track id -> recent center trail
+    records = []
+    for fr in person_frames:
+        t, persons = fr["t"], fr["persons"]
+        # Track how much each detected person wanders. Spectators keep stable
+        # detector ids and stay put, so they become identifiable -- and are
+        # excluded from fighter candidacy outright. (Fighters pass even when
+        # pausing: hard tracking churns their ids, which resets the trail.)
+        for p in persons:
+            tid = p.get("id")
+            if tid is None:
+                continue
+            trail = id_trails.setdefault(tid, [])
+            cx, cy = _box_center(p["box"])
+            trail.append((t, cx, cy))
+            while trail and t - trail[0][0] > STATIC_WINDOW_S:
+                trail.pop(0)
+        persons = [p for p in persons
+                   if not _trail_static(id_trails.get(p.get("id"), []),
+                                        p["box"][3] - p["box"][1])]
+        for s in (0, 1):
+            if slots[s] is not None and (t - slots[s]["last_t"]) > TRACK_MEMORY_S:
+                slots[s] = None
+            elif slots[s] is not None and _slot_static(slots[s], t):
+                # A "fighter" who hasn't wandered in seconds is a locked-onto
+                # spectator; drop the slot so refill/re-seed can recover.
+                slots[s] = None
+
+        candidates = [p for p in persons
+                      if (p["box"][3] - p["box"][1]) >= CAND_MIN_HEIGHT_FRAC * frame_h]
+        matched = {}     # slot -> person
+        if all(s is None for s in slots):
+            for s, p in enumerate(select_fighters(persons, frame_w, frame_h)[:2]):
+                slots[s] = _new_slot(p, t)
+                matched[s] = p
+        else:
+            used = set()
+            # Pass 1: the detector's own track id is the strongest signal.
+            for s in (0, 1):
+                if slots[s] is None or slots[s].get("tid") is None:
+                    continue
+                for ci, c in enumerate(candidates):
+                    if ci not in used and c.get("id") == slots[s]["tid"]:
+                        used.add(ci)
+                        matched[s] = c
+                        break
+            # Pass 2: nearest surviving candidate within the distance gate.
+            for s in (0, 1):
+                if slots[s] is None or s in matched:
+                    continue
+                sc = _box_center(slots[s]["box"])
+                gate = MATCH_GATE_HEIGHTS * max(1.0, slots[s]["box"][3] - slots[s]["box"][1])
+                best, best_d = None, None
+                for ci, c in enumerate(candidates):
+                    if ci in used:
+                        continue
+                    d = math.hypot(*(a - b for a, b in zip(_box_center(c["box"]), sc)))
+                    if d <= gate and (best_d is None or d < best_d):
+                        best, best_d = ci, d
+                if best is not None:
+                    used.add(best)
+                    matched[s] = candidates[best]
+            # Refill a single empty slot (a fighter re-entering after being
+            # lost while the other slot stayed alive). The new person must be
+            # *near the opponent* -- refilling with the biggest leftover person
+            # tends to grab a large ringside spectator and stick to them.
+            empties = [s for s in (0, 1) if slots[s] is None]
+            if empties:
+                strict = [p for p in select_fighters(persons, frame_w, frame_h)
+                          if not any(p is m for m in matched.values())]
+                for s in empties:
+                    other = slots[1 - s]
+                    if other is None or not strict:
+                        continue
+                    anchor = _box_center(other["box"])
+                    gate = REFILL_GATE_HEIGHTS * max(1.0, other["box"][3] - other["box"][1])
+                    best, best_d = None, None
+                    for p in strict:
+                        d = math.hypot(*(a - b for a, b in zip(_box_center(p["box"]), anchor)))
+                        if d <= gate and (best_d is None or d < best_d):
+                            best, best_d = p, d
+                    if best is not None:
+                        strict.remove(best)
+                        matched[s] = best
+            for s, p in matched.items():
+                prev = slots[s]
+                slots[s] = _new_slot(p, t, trail=prev["trail"] if prev is not None else None)
+
+        fighters = [{"id": s, "box": matched[s]["box"], "kpts": matched[s]["kpts"]}
+                    for s in (0, 1) if s in matched]
+        records.append({
+            "t": t,
+            "fighters": fighters,
+            "slot_boxes": [slots[s]["box"] if slots[s] is not None else None for s in (0, 1)],
+        })
+    return records
+
+
+def pair_engaged(slot_boxes, max_dist_heights=ENGAGE_DIST_HEIGHTS):
+    """True when both fighter slots exist and are within striking range."""
+    a, b = (slot_boxes + [None, None])[:2]
+    if a is None or b is None:
+        return False
+    ca, cb = _box_center(a), _box_center(b)
+    mean_h = ((a[3] - a[1]) + (b[3] - b[1])) / 2.0 or 1.0
+    return math.hypot(ca[0] - cb[0], ca[1] - cb[1]) <= max_dist_heights * mean_h
+
+
 def _kp_xy(kpts, idx):
     """Return (x, y) for keypoint ``idx`` if confident enough, else None."""
     if idx >= len(kpts):
@@ -179,15 +351,30 @@ def detect_strikes(frame_records, speed_thresh=STRIKE_SPEED_THRESH,
 def build_tracking(frame_records, width, height, fps, source=None, domain="martial_arts"):
     """Turn per-frame fighter records into the pipeline's tracking schema.
 
-    The per-frame ``subject`` point is the centroid of the fighters' box centres
-    (or null when no fighter is in frame -- a real lull), so the existing
-    segmentation/speed code keys on the *fighters* rather than all motion.
-    Strike events come from :func:`detect_strikes`.
+    The per-frame ``subject`` point is what the generic segmentation/speed code
+    keys on. Records from :func:`track_fighter_slots` carry ``slot_boxes``; for
+    those the subject is the midpoint of the two slots *only while the pair is
+    engaged* (within striking range), so the lulls between exchanges -- fighters
+    resetting after a point -- read as real segmentation gaps even though both
+    stay in frame, and the midpoint of a stable pair can't teleport when a
+    detection flickers. Legacy records (no ``slot_boxes``) keep the old
+    behaviour: centroid of whatever fighters are present. Strike events come
+    from :func:`detect_strikes`.
     """
     frames = []
+    fighter_frames = 0
     for i, rec in enumerate(frame_records):
         fighters = rec.get("fighters", [])
-        if fighters:
+        slot_boxes = rec.get("slot_boxes")
+        if fighters or (slot_boxes and any(b is not None for b in slot_boxes)):
+            fighter_frames += 1
+        if slot_boxes is not None:
+            if pair_engaged(slot_boxes):
+                ca, cb = _box_center(slot_boxes[0]), _box_center(slot_boxes[1])
+                subject = [round((ca[0] + cb[0]) / 2, 2), round((ca[1] + cb[1]) / 2, 2)]
+            else:
+                subject = None
+        elif fighters:
             centers = [_box_center(f["box"]) for f in fighters]
             subject = [round(sum(c[0] for c in centers) / len(centers), 2),
                        round(sum(c[1] for c in centers) / len(centers), 2)]
@@ -197,6 +384,7 @@ def build_tracking(frame_records, width, height, fps, source=None, domain="marti
 
     detected = sum(1 for f in frames if f["subject"] is not None)
     return {
+        "fighter_frames": fighter_frames,
         "fps": fps,
         "source": source,
         "domain": domain,
@@ -212,6 +400,19 @@ def build_tracking(frame_records, width, height, fps, source=None, domain="marti
 # --------------------------------------------------------------------------
 # Model + video I/O (lazy deps: ultralytics, opencv, ffmpeg)
 # --------------------------------------------------------------------------
+def _resolve_model(model=DEFAULT_MODEL):
+    """Prefer weights vendored under ``models/`` over a bare model name.
+
+    A bare name makes ultralytics download from its release CDN, which some
+    environments' egress policies block; a checked-in ``models/<name>`` file
+    (see the fetch-assets workflow) works everywhere. Explicit paths win as-is.
+    """
+    if os.path.sep in str(model) or os.path.exists(model):
+        return model
+    local = os.path.join(MODELS_DIR, str(model))
+    return local if os.path.exists(local) else model
+
+
 def _normalize_video(src, fps, width):
     """ffmpeg the source to a fixed fps/width mp4 so inference cost is bounded."""
     tmp = tempfile.mkstemp(prefix="coachvision_norm_", suffix=".mp4")[1]
@@ -254,17 +455,16 @@ def analyze(video_path, fps=DEFAULT_FPS, width=DEFAULT_WIDTH, conf=DEFAULT_CONF,
     from ultralytics import YOLO
 
     norm = _normalize_video(video_path, fps, width)
-    yolo = YOLO(model)
-    records = []
+    yolo = YOLO(_resolve_model(model))
+    person_frames = []
     fw = fh = 0
     for i, result in enumerate(yolo.track(source=norm, stream=True, persist=True,
                                           conf=conf, verbose=False)):
         if result.orig_shape is not None:
             fh, fw = int(result.orig_shape[0]), int(result.orig_shape[1])
-        persons = _persons_from_result(result)
-        fighters = select_fighters(persons, fw or width, fh or width)
-        records.append({"t": i / fps, "fighters": fighters})
+        person_frames.append({"t": i / fps, "persons": _persons_from_result(result)})
 
+    records = track_fighter_slots(person_frames, fw or width, fh or width)
     tracking = build_tracking(records, fw or int(width), fh or int(width), fps,
                               source=source_label)
     return tracking, records, norm
@@ -325,7 +525,7 @@ def render_overlay(norm_video, out_path, records, events, fps=DEFAULT_FPS):
 def _draw_fighters(cv2, frame, fighters):
     colors = [(0, 220, 255), (255, 180, 0)]  # one per fighter id slot
     for n, f in enumerate(fighters):
-        color = colors[n % len(colors)]
+        color = colors[f.get("id", n) % len(colors)]
         x1, y1, x2, y2 = (int(v) for v in f["box"])
         cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
         cv2.putText(frame, f"fighter {f.get('id', n)}", (x1, max(0, y1 - 6)),

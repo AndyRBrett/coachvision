@@ -110,20 +110,34 @@ reports/
 > PWA shows them at the top of the clip dialog. This is **cost-gated and
 > optional**: add an `ANTHROPIC_API_KEY` repo secret
 > (**Settings → Secrets and variables → Actions**) to enable it. With no secret
-> the step is skipped and the run still succeeds.
+> the step is skipped and the run still succeeds. On a dev box with the
+> **`claude` CLI** already authenticated, set `COACHVISION_FEEDBACK_CLI=1` to
+> generate the same feedback through `claude -p` without an API key.
+
+> **Pose weights without CDN access.** A bare model name makes ultralytics
+> download `yolov8n-pose.pt` from its GitHub release CDN. Environments whose
+> egress policy blocks that can vendor the weights into the repo instead: run
+> the `fetch-assets` workflow (or commit the file by hand) to place them at
+> `models/yolov8n-pose.pt`, which `fight_analysis` prefers automatically.
 
 `reports/index.json` is a flat list of clips with relative paths to each
 artifact — exactly what a **static phone PWA** (served from GitHub Pages or the
 raw repo) can fetch to render a session gallery, with no server to run. The same
 `workflow_dispatch` is the PWA's "analyze this clip" button.
 
-> **Detection quality, honestly.** v1 finds *where the action is*: motion-energy
-> segments a fixed-camera recording into exchanges and reports their length and
-> fighter speed. It does **not** yet classify individual strikes (jab vs. kick) —
-> segments come back `untagged` unless you supply an events sidecar or enable the
-> optional [Cosmos Reason](#optional-nvidia-cosmos-reason-tagging) VLM tagging
-> (which also runs off-box behind an HTTP endpoint, so still no local GPU). Works
-> best with a steady camera; a panning phone adds background motion.
+> **Detection quality, honestly.** With `annotate` on, martial-arts runs are
+> pose-driven (`fight_analysis.py`): YOLOv8-pose detections feed two *fighter
+> slots* tracked across frames (detector id first, then proximity; static
+> ringside people are excluded from candidacy; a lost slot coasts ~1s and refills
+> only near the opponent). An **exchange** is the span where the pair is engaged
+> — within ~1.2 fighter-heights of each other — so lulls between points read as
+> real gaps even though everyone stays in frame. Strike *attempts* are flagged
+> from wrist/ankle snap speed and split hand vs leg per fighter; it does **not**
+> name techniques (jab vs. hook), and on crowded tournament footage the tracker
+> can briefly latch onto a referee or lose a motion-blurred fighter who crosses
+> in front of the camera — treat counts as approximate signal. Without pose deps
+> the fallback is motion-energy segmentation, which finds *where the action is*
+> and works best with a steady camera.
 
 ## Phone app (PWA)
 

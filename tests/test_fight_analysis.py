@@ -92,6 +92,77 @@ class TestBuildTracking(unittest.TestCase):
         self.assertEqual(tracking["detected_frames"], 1)
         self.assertEqual(tracking["domain"], "martial_arts")
 
+    def test_engagement_gates_subject_for_slot_records(self):
+        # Slot records: subject exists only while the pair is within range, so
+        # fighters resetting between exchanges read as segmentation gaps even
+        # though both stay in frame.
+        near = {"t": 0.0, "fighters": [], "slot_boxes": [[0, 0, 100, 200], [120, 0, 220, 200]]}
+        far = {"t": 0.1, "fighters": [], "slot_boxes": [[0, 0, 100, 200], [700, 0, 800, 200]]}
+        one = {"t": 0.2, "fighters": [], "slot_boxes": [[0, 0, 100, 200], None]}
+        tracking = fa.build_tracking([near, far, one], 1000, 200, 10.0)
+        self.assertEqual(tracking["frames"][0]["subject"], [110.0, 100.0])
+        self.assertIsNone(tracking["frames"][1]["subject"])
+        self.assertIsNone(tracking["frames"][2]["subject"])
+        self.assertEqual(tracking["detected_frames"], 1)
+        self.assertEqual(tracking["fighter_frames"], 3)
+
+
+class TestPairEngaged(unittest.TestCase):
+    def test_close_pair_engaged(self):
+        self.assertTrue(fa.pair_engaged([[0, 0, 100, 200], [150, 0, 250, 200]]))
+
+    def test_far_pair_not_engaged(self):
+        self.assertFalse(fa.pair_engaged([[0, 0, 100, 200], [700, 0, 800, 200]]))
+
+    def test_missing_slot_not_engaged(self):
+        self.assertFalse(fa.pair_engaged([[0, 0, 100, 200], None]))
+
+
+class TestTrackFighterSlots(unittest.TestCase):
+    def _frames(self, per_frame_persons, dt=0.1):
+        return [{"t": round(i * dt, 3), "persons": persons}
+                for i, persons in enumerate(per_frame_persons)]
+
+    def test_slots_keep_identity_across_id_churn(self):
+        # Same two people drift right while the detector re-ids one of them;
+        # proximity keeps each in its original slot.
+        frames = []
+        for i in range(4):
+            a = _fighter([300 + 5 * i, 300, 470 + 5 * i, 800], fid=1)
+            b = _fighter([520 + 5 * i, 300, 690 + 5 * i, 800], fid=(2 if i < 2 else 99))
+            frames.append([a, b])
+        records = fa.track_fighter_slots(self._frames(frames), 1000, 1000)
+        for rec in records:
+            self.assertEqual(sorted(f["id"] for f in rec["fighters"]), [0, 1])
+        # slot 1 stays on person b even after its detector id churned to 99
+        xs = [f["box"][0] for rec in records for f in rec["fighters"] if f["id"] == 1]
+        self.assertEqual(xs, [520, 525, 530, 535])
+
+    def test_lost_slot_coasts_then_empties(self):
+        a = _fighter([300, 300, 470, 800], fid=1)
+        b = _fighter([520, 300, 690, 800], fid=2)
+        frames = [[a, b]] + [[a]] * 14   # b disappears for 1.4s at dt=0.1
+        records = fa.track_fighter_slots(self._frames(frames), 1000, 1000)
+        # coasts (box kept) within TRACK_MEMORY_S...
+        self.assertIsNotNone(records[5]["slot_boxes"][1])
+        # ...then empties once the memory expires
+        self.assertIsNone(records[-1]["slot_boxes"][1])
+
+    def test_static_person_excluded(self):
+        # A large "spectator" who never moves must not fill the second slot,
+        # even though they pass the size gates.
+        mover = _fighter([300, 300, 470, 800], fid=1)
+        statue = _fighter([600, 300, 770, 800], fid=2)
+        frames = []
+        for i in range(40):  # 4s at dt=0.1 -- beyond STATIC_WINDOW_S
+            m = _fighter([300 + 8 * i, 300, 470 + 8 * i, 800], fid=1)
+            frames.append([m, statue])
+        records = fa.track_fighter_slots(self._frames(frames), 1000, 1000)
+        # by the end of the clip the statue has been dropped from candidacy
+        self.assertEqual([f["id"] for f in records[-1]["fighters"]], [0])
+        self.assertIsNone(records[-1]["slot_boxes"][1])
+        self.assertEqual(records[-1]["fighters"][0]["box"][0], 300 + 8 * 39)
+
 
 if __name__ == "__main__":
     unittest.main()
