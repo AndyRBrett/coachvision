@@ -1,0 +1,13 @@
+{
+  "actual_frames": 540,
+  "detected_frames": 362,
+  "domain": "martial_arts",
+  "errors": [],
+  "expected_frames": 540,
+  "failed_frames": 0,
+  "footage_processed": 1,
+  "frames_processed": 540,
+  "generated_at": "2026-07-03T16:52:17Z",
+  "segment_count": 5,
+  "source": "img_4501-ci"
+}
