@@ -16,6 +16,7 @@ stay generic and just ask the active domain. Select it with the
 ``COACHVISION_DOMAIN`` environment variable or a ``--domain`` CLI flag. The default
 is volleyball, which preserves prior behaviour and the overseer's existing
 machine-readable status contract (``segment_count``, ``frames_processed``, ...).
+The deployed automation runs martial_arts via COACHVISION_DOMAIN in the workflows.
 
 Why these two detectors?
 ------------------------

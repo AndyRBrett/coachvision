@@ -136,6 +136,10 @@ def build_status(results: dict, pending_footage: int = 0, selftest: dict = None)
     now_iso = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     last_footage_at = results.get("last_footage_at")
     status = {
+        # Product identity: the heartbeat leads with the app name so the status
+        # reads as "coachvision" rather than any one sport. The sport actually
+        # exercised is recorded separately (`domain` / `pipeline_selftest.domain`).
+        "app": "coachvision",
         "generated_at": now_iso,
         # Heartbeat: written on EVERY run regardless of footage. Lets the
         # overseer distinguish "pipeline ran, no new footage" (last_run_at
