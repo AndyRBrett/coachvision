@@ -46,8 +46,8 @@ the direct analogue of a volleyball going out of play. (Standard dependency-free
 approach; see e.g. [energy-guided temporal segmentation](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7506802/).)
 
 Select the domain with the `--domain` flag or the `COACHVISION_DOMAIN` env var
-(default `volleyball`, preserving prior behaviour and the overseer's status
-contract):
+(library default `volleyball`, preserving prior behaviour and the overseer's
+status contract; the deployed automation runs `martial_arts` via the workflows):
 
 ```bash
 # Process martial-arts footage end-to-end

@@ -11,11 +11,11 @@ permissions:
   contents: write
 
 # Which sport the pipeline runs for. Set the repo/org variable COACHVISION_DOMAIN
-# (Settings -> Secrets and variables -> Actions -> Variables) to "martial_arts"
+# (Settings -> Secrets and variables -> Actions -> Variables) to "volleyball"
 # to switch the whole automated pipeline -- detection, self-test, and status --
-# without touching code. Defaults to volleyball.
+# without touching code. Defaults to martial_arts (the sport this project runs on).
 env:
-  COACHVISION_DOMAIN: ${{ vars.COACHVISION_DOMAIN || 'volleyball' }}
+  COACHVISION_DOMAIN: ${{ vars.COACHVISION_DOMAIN || 'martial_arts' }}
 
 jobs:
   write-status:

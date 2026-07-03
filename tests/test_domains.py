@@ -10,7 +10,8 @@ import domains  # noqa: E402
 class TestGetDomain(unittest.TestCase):
     def test_default_is_volleyball(self):
         # With no argument and no env override, the default preserves prior
-        # behaviour (and the overseer's existing contract).
+        # behaviour (and the overseer's existing contract). The deployed
+        # automation selects martial_arts via COACHVISION_DOMAIN in the workflows.
         os.environ.pop(domains.ENV_VAR, None)
         self.assertEqual(domains.get_domain().key, "volleyball")
 
