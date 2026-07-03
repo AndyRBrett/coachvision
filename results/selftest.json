@@ -1,9 +1,9 @@
 {
-  "clip": "fixtures/reference_clip.pgm.gz",
-  "detected_frames": 58,
-  "domain": "volleyball",
-  "frames_processed": 104,
+  "clip": "fixtures/martialarts_clip.pgm.gz",
+  "detected_frames": 48,
+  "domain": "martial_arts",
+  "frames_processed": 77,
   "ok": true,
   "segment_count": 3,
-  "verified_at": "2026-06-29T11:06:07Z"
+  "verified_at": "2026-07-03T18:00:18Z"
 }
