@@ -4,6 +4,168 @@
       "clips": [
         {
           "annotated": true,
+          "duration": 2.4,
+          "end": 2.4,
+          "id": "exchange_001",
+          "start": 0.0,
+          "tags": [
+            "hand_strike"
+          ],
+          "video": "reports/img_4501-ci/highlights/exchange_001.mp4"
+        },
+        {
+          "annotated": true,
+          "duration": 10.5,
+          "end": 14.1,
+          "id": "exchange_002",
+          "start": 3.6,
+          "tags": [
+            "hand_strike",
+            "leg_strike"
+          ],
+          "video": "reports/img_4501-ci/highlights/exchange_002.mp4"
+        },
+        {
+          "annotated": true,
+          "duration": 1.2,
+          "end": 19.1,
+          "id": "exchange_003",
+          "start": 17.9,
+          "tags": [
+            "hand_strike",
+            "leg_strike"
+          ],
+          "video": "reports/img_4501-ci/highlights/exchange_003.mp4"
+        },
+        {
+          "annotated": true,
+          "duration": 13.6,
+          "end": 34.0,
+          "id": "exchange_004",
+          "start": 20.4,
+          "tags": [
+            "hand_strike",
+            "leg_strike"
+          ],
+          "video": "reports/img_4501-ci/highlights/exchange_004.mp4"
+        },
+        {
+          "annotated": true,
+          "duration": 9.3,
+          "end": 46.5,
+          "id": "exchange_005",
+          "start": 37.2,
+          "tags": [
+            "hand_strike",
+            "leg_strike"
+          ],
+          "video": "reports/img_4501-ci/highlights/exchange_005.mp4"
+        }
+      ],
+      "detected_frames": 362,
+      "domain": "martial_arts",
+      "feedback": "reports/img_4501-ci/coaching/feedback.md",
+      "fps": 10.0,
+      "frame_size": [
+        640,
+        360
+      ],
+      "frames_processed": 540,
+      "id": "img_4501-ci",
+      "manifest": "reports/img_4501-ci/highlights/manifest.json",
+      "processed_at": "2026-07-03T16:52:37Z",
+      "rendered_count": 5,
+      "report": "reports/img_4501-ci/coaching/report.json",
+      "segment_count": 5,
+      "source": "img_4501-ci",
+      "summary": "reports/img_4501-ci/coaching/summary.txt",
+      "title": "img_4501-ci"
+    },
+    {
+      "clips": [
+        {
+          "annotated": true,
+          "duration": 2.4,
+          "end": 2.4,
+          "id": "exchange_001",
+          "start": 0.0,
+          "tags": [
+            "hand_strike"
+          ],
+          "video": "reports/img_4501/highlights/exchange_001.mp4"
+        },
+        {
+          "annotated": true,
+          "duration": 10.5,
+          "end": 14.1,
+          "id": "exchange_002",
+          "start": 3.6,
+          "tags": [
+            "hand_strike",
+            "leg_strike"
+          ],
+          "video": "reports/img_4501/highlights/exchange_002.mp4"
+        },
+        {
+          "annotated": true,
+          "duration": 7.1,
+          "end": 26.4,
+          "id": "exchange_003",
+          "start": 19.3,
+          "tags": [
+            "hand_strike",
+            "leg_strike"
+          ],
+          "video": "reports/img_4501/highlights/exchange_003.mp4"
+        },
+        {
+          "annotated": true,
+          "duration": 6.1,
+          "end": 34.0,
+          "id": "exchange_004",
+          "start": 27.9,
+          "tags": [
+            "hand_strike",
+            "leg_strike"
+          ],
+          "video": "reports/img_4501/highlights/exchange_004.mp4"
+        },
+        {
+          "annotated": true,
+          "duration": 9.3,
+          "end": 46.5,
+          "id": "exchange_005",
+          "start": 37.2,
+          "tags": [
+            "hand_strike",
+            "leg_strike"
+          ],
+          "video": "reports/img_4501/highlights/exchange_005.mp4"
+        }
+      ],
+      "detected_frames": 345,
+      "domain": "martial_arts",
+      "feedback": "reports/img_4501/coaching/feedback.md",
+      "fps": 10.0,
+      "frame_size": [
+        640,
+        360
+      ],
+      "frames_processed": 540,
+      "id": "img_4501",
+      "manifest": "reports/img_4501/highlights/manifest.json",
+      "processed_at": "2026-07-02T21:13:09Z",
+      "rendered_count": 5,
+      "report": "reports/img_4501/coaching/report.json",
+      "segment_count": 5,
+      "source": "IMG_4501.MOV",
+      "summary": "reports/img_4501/coaching/summary.txt",
+      "title": "IMG_4501.MOV"
+    },
+    {
+      "clips": [
+        {
+          "annotated": true,
           "duration": 53.8,
           "end": 53.8,
           "id": "exchange_001",
@@ -178,5 +340,5 @@
       "summary": "reports/view-usp-drivesdk/coaching/summary.txt"
     }
   ],
-  "updated_at": "2026-06-26T18:50:58Z"
+  "updated_at": "2026-07-03T16:52:37Z"
 }

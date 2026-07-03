@@ -233,7 +233,11 @@ def process(
     # Render the tagged highlight clips (ffmpeg trims). Best-effort: missing ffmpeg
     # or a single bad clip is skipped, never fatal. Record which actually rendered.
     manifest = result["manifest"]
-    render_status = {r["id"]: r.get("status") for r in highlights.render_clips(manifest)}
+    render_results = highlights.render_clips(manifest)
+    for r in render_results:
+        if r.get("status") == "failed":   # surface why a clip is missing from the report
+            print(f"render failed for {r['id']}: {(r.get('stderr') or '')[-200:]}")
+    render_status = {r["id"]: r.get("status") for r in render_results}
     for clip in manifest["clips"]:
         clip["rendered"] = render_status.get(clip["id"]) == "rendered"
         clip.pop("ffmpeg_cmd", None)  # internal; not needed in the published manifest

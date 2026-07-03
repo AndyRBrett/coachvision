@@ -137,5 +137,16 @@ class TestRenderClips(unittest.TestCase):
         self.assertEqual(res[0]["status"], "skipped")
 
 
+class TestStripVf(unittest.TestCase):
+    def test_removes_vf_pair(self):
+        cmd = ["ffmpeg", "-y", "-i", "in.mp4", "-vf", "drawtext=text='x'", "out.mp4"]
+        self.assertEqual(highlights.strip_vf(cmd),
+                         ["ffmpeg", "-y", "-i", "in.mp4", "out.mp4"])
+
+    def test_no_vf_untouched(self):
+        cmd = ["ffmpeg", "-y", "-i", "in.mp4", "out.mp4"]
+        self.assertEqual(highlights.strip_vf(cmd), cmd)
+
+
 if __name__ == "__main__":
     unittest.main()

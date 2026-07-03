@@ -1,0 +1,15 @@
+Coaching report (Martial arts) -- IMG_4501.MOV
+  exchanges: 5   total play: 35.4s   longest: 10.5s
+  peak fighter speed: 1261.6 px/s
+
+  exchange_001: 2.4s, 1 strikes [hand_strike], peak 385.82 px/s
+  exchange_002: 10.5s, 8 strikes [hand_strike, leg_strike], peak 489.52 px/s
+  exchange_003: 7.1s, 16 strikes [hand_strike, leg_strike], peak 344.68 px/s
+  exchange_004: 6.1s, 9 strikes [hand_strike, leg_strike], peak 507.53 px/s
+  exchange_005: 9.3s, 18 strikes [hand_strike, leg_strike], peak 1261.6 px/s
+
+  strike-zone heatmap (mat top-left origin):
+    | .    |
+    |-@-+. |
+    |.=--. |
+    |.-::. |

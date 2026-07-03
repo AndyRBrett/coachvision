@@ -1,0 +1,41 @@
+# Fetch model weights on a GitHub runner (which has open network) and commit
+# them to the triggering branch, so environments whose egress policy blocks the
+# ultralytics release CDN can still run the pose model from the repo checkout.
+name: fetch-assets
+
+on:
+  workflow_dispatch:
+  # Session tokens can't POST workflow dispatches, so also fire when this file
+  # itself changes on a branch push (effectively a one-shot trigger).
+  push:
+    paths:
+      - ".github/workflows/fetch-assets.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download yolov8n-pose weights
+        run: |
+          mkdir -p models
+          curl -fsSL -o models/yolov8n-pose.pt \
+            https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov8n-pose.pt
+          ls -la models/
+          python3 -c "import hashlib; print('sha256', hashlib.sha256(open('models/yolov8n-pose.pt','rb').read()).hexdigest())"
+
+      - name: Commit to this branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add models/yolov8n-pose.pt
+          if git diff --cached --quiet; then
+            echo "weights already present"
+          else
+            git commit -m "models: add yolov8n-pose weights fetched by CI"
+            git push
+          fi

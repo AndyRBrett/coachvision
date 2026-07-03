@@ -240,12 +240,26 @@ def build_manifest(
     }
 
 
+def strip_vf(cmd):
+    """Return ``cmd`` without its ``-vf <filter>`` pair (or ``cmd`` if absent).
+
+    Some static ffmpeg builds ship without the drawtext filter; dropping the
+    tag overlay lets the clip render plain instead of not at all.
+    """
+    if "-vf" not in cmd:
+        return list(cmd)
+    i = cmd.index("-vf")
+    return cmd[:i] + cmd[i + 2:]
+
+
 def render_clips(manifest, dry_run=False):
     """Execute the ffmpeg commands recorded in a manifest.
 
     Returns a list of {"id", "status", ...}. When ffmpeg is missing or a clip is
     not renderable, the clip is skipped (status "skipped") rather than failing
-    the whole run. ``dry_run`` reports what would run without invoking ffmpeg.
+    the whole run. A failure in the tag-overlay filter (ffmpeg builds without
+    drawtext) retries the same trim without the overlay. ``dry_run`` reports
+    what would run without invoking ffmpeg.
     """
     have_ffmpeg = shutil.which("ffmpeg") is not None
     results = []
@@ -262,6 +276,10 @@ def render_clips(manifest, dry_run=False):
             continue
         os.makedirs(os.path.dirname(cmd[-1]) or ".", exist_ok=True)
         proc = subprocess.run(cmd, capture_output=True, text=True)
+        if proc.returncode != 0 and "drawtext" in (proc.stderr or ""):
+            bare = strip_vf(cmd)
+            if bare != cmd:
+                proc = subprocess.run(bare, capture_output=True, text=True)
         if proc.returncode == 0:
             results.append({"id": clip["id"], "status": "rendered", "output": cmd[-1]})
         else:

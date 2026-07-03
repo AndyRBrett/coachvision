@@ -19,6 +19,8 @@ is actually present.
 """
 import base64
 import os
+import shutil
+import subprocess
 
 # Default to Claude Opus 4.8 -- the most capable Opus-tier model. Adaptive
 # thinking + streaming follow the SDK's defaults for non-trivial vision work.
@@ -58,16 +60,28 @@ def summarize_stats(tracking, segment_count=None, events=None):
     dur = frames / fps if fps else 0.0
     present = (100 * detected / frames) if frames else 0.0
 
-    lines = [
-        f"Clip length: {dur:.1f}s ({frames} frames @ {fps:g} fps)",
-        f"Fighters in frame: {present:.0f}% of frames",
-        f"Strike attempts detected: {hand + leg} (hand {hand}, leg {leg})",
-    ]
+    lines = [f"Clip length: {dur:.1f}s ({frames} frames @ {fps:g} fps)"]
+    fighter_frames = tracking.get("fighter_frames")
+    if fighter_frames is not None and frames:
+        # Pose-tracked clips distinguish "a fighter is visible" from "the pair
+        # is engaged" (within striking range -- an exchange is live).
+        lines.append(f"Fighters in frame: {100 * fighter_frames / frames:.0f}% of frames")
+        lines.append(f"Pair engaged (exchange live): {present:.0f}% of frames")
+    else:
+        lines.append(f"Fighters in frame: {present:.0f}% of frames")
+    lines.append(f"Strike attempts detected: {hand + leg} (hand {hand}, leg {leg})")
     if dur > 0:
         lines.append(f"Strike rate: {(hand + leg) / dur * 60:.1f} per minute")
     if hand + leg:
         lines.append(f"Hand/leg mix: {round(100 * hand / (hand + leg))}% hand / "
                      f"{round(100 * leg / (hand + leg))}% leg")
+    fighter_ids = sorted({e.get("fighter") for e in events if e.get("fighter") is not None})
+    if len(fighter_ids) > 1:
+        for fid in fighter_ids:
+            fh = sum(1 for e in events if e.get("fighter") == fid and e.get("type") == "hand_strike")
+            fl = sum(1 for e in events if e.get("fighter") == fid and e.get("type") == "leg_strike")
+            lines.append(f"  fighter {fid}: {fh + fl} attempts (hand {fh}, leg {fl}) "
+                         "-- ids may swap when tracking re-locks")
     if segment_count is not None:
         lines.append(f"Exchanges (motion segments): {segment_count}")
     return "\n".join(lines)
@@ -103,9 +117,16 @@ def generate_feedback(tracking, still_paths, role="martial arts coach",
     Cost-gated: with no ``ANTHROPIC_API_KEY`` (env or arg) this returns ``None``
     so the pipeline skips the step cleanly. Otherwise it streams one Opus 4.8
     vision request (adaptive thinking) and returns the assistant's Markdown text.
+
+    Fallback: with no key but ``COACHVISION_FEEDBACK_CLI`` set truthy and the
+    ``claude`` CLI on PATH (e.g. a dev box or Claude Code session that is
+    already authenticated), the same prompt runs through ``claude -p`` instead.
     """
     api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
+        if os.environ.get("COACHVISION_FEEDBACK_CLI") and shutil.which("claude"):
+            stats_text = summarize_stats(tracking, segment_count=segment_count)
+            return _generate_via_cli(stats_text, still_paths, role=role, model=model)
         return None
 
     import anthropic  # lazy: only needed when a key is present
@@ -124,6 +145,36 @@ def generate_feedback(tracking, still_paths, role="martial arts coach",
     ) as stream:
         final = stream.get_final_message()
     return "".join(b.text for b in final.content if getattr(b, "type", None) == "text").strip()
+
+
+def _generate_via_cli(stats_text, still_paths, role="martial arts coach", model=MODEL):
+    """Same feedback request through the ``claude`` CLI (headless, best-effort).
+
+    The CLI reads the annotated stills from disk with its Read tool instead of
+    receiving base64 image blocks; everything else (system prompt, stats,
+    sections) matches the SDK path. Returns Markdown, or None on any failure.
+    """
+    stills = [os.path.abspath(p) for p in still_paths[:MAX_STILLS] if os.path.exists(p)]
+    prompt_parts = [SYSTEM_PROMPT.format(role=role), "",
+                    "Computed stats for this clip:", "", stats_text, ""]
+    if stills:
+        prompt_parts.append("First Read these annotated still frames (image files):")
+        prompt_parts.extend(f"  {p}" for p in stills)
+        prompt_parts.append("")
+    prompt_parts.append("Give your coaching feedback now, using the sections above. "
+                        "Output only the feedback Markdown.")
+    try:
+        proc = subprocess.run(
+            ["claude", "-p", "\n".join(prompt_parts), "--model", model,
+             "--allowedTools", "Read"],
+            capture_output=True, text=True, timeout=600,
+        )
+    except Exception:  # noqa: BLE001 -- feedback is best-effort
+        return None
+    if proc.returncode != 0:
+        return None
+    text = proc.stdout.strip()
+    return text or None
 
 
 if __name__ == "__main__":
