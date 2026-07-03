@@ -100,8 +100,7 @@ function card(clip) {
   const b = el("button", "card");
   const h = el("h4");
   h.appendChild(el("span", null, clip.title || clip.id));
-  const badge = el("span", `badge ${clip.domain === "volleyball" ? "volleyball" : ""}`,
-    clip.domain === "volleyball" ? "volleyball" : "martial arts");
+  const badge = el("span", "badge", "coachvision");
   h.appendChild(badge);
   b.appendChild(h);
 
