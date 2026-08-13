@@ -100,7 +100,10 @@ function card(clip) {
   const b = el("button", "card");
   const h = el("h4");
   h.appendChild(el("span", null, clip.title || clip.id));
-  const badge = el("span", "badge", "coachvision");
+  // A demo session must never read as footage you actually ingested (#21) — it
+  // exists to show what a report looks like before the first real clip lands.
+  const badge = el("span", "badge", clip.demo ? "demo" : "coachvision");
+  if (clip.demo) badge.classList.add("is-demo");
   h.appendChild(badge);
   b.appendChild(h);
 

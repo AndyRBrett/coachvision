@@ -40,6 +40,14 @@ jobs:
       - name: Pipeline self-test (reference clip)
         run: python pipeline.py --self-test
 
+      # Publish the bundled clip as a demo session (#21). The self-test above
+      # already ran the whole pipeline and threw the report away; this writes it
+      # out so the dashboard has something to show before real footage exists,
+      # and so the REPORT-WRITING path is exercised on every run rather than
+      # first being tried the day real footage arrives.
+      - name: Publish demo coaching report
+        run: python demo.py
+
       - name: Write overseer status
         run: python write_status.py
 
@@ -47,7 +55,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add overseer-status.json ingest_state.json ingest_queue.json results/selftest.json
+          git add overseer-status.json ingest_state.json ingest_queue.json \
+                  results/selftest.json reports/demo reports/index.json
           if git diff --cached --quiet; then
             echo "No change to status or ingest state"
           else

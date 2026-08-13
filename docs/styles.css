@@ -74,6 +74,9 @@ button { cursor: pointer; font-size: 14px; }
   background: #06363a; color: var(--accent); white-space: nowrap;
 }
 .badge.volleyball { background: #0b2a40; color: var(--accent-2); }
+/* Demo sessions are visibly not your footage (#21): muted and outlined rather
+   than filled, so a sample can never be misread as a processed session. */
+.badge.is-demo { background: transparent; color: var(--muted); border: 1px dashed var(--line); }
 .stats { display: flex; gap: 14px; flex-wrap: wrap; color: var(--muted); font-size: 12.5px; margin-top: 4px; }
 .stats b { color: var(--text); font-weight: 700; }
 .when { color: var(--muted); font-size: 11.5px; margin-top: 6px; }

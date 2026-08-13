@@ -1,0 +1,13 @@
+Coaching report (Martial arts) -- fixtures/martialarts_clip.pgm.gz
+  exchanges: 3   total play: 4.5s   longest: 1.6s
+  peak fighter speed: 53.15 px/s
+
+  exchange_001: 1.3s, 3 strikes [jab, cross, hook], peak 53.15 px/s (5.32 m/s)
+  exchange_002: 1.6s, 3 strikes [kick, knee, takedown], peak 46.1 px/s (4.61 m/s)
+  exchange_003: 1.6s, 3 strikes [jab, elbow, clinch], peak 42.43 px/s (4.24 m/s)
+
+  strike-zone heatmap (mat top-left origin):
+    |      |
+    |  *-  |
+    | @ *- |
+    |      |

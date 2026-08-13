@@ -1,6 +1,22 @@
 {
   "clips": [
     {
+      "clips": [],
+      "demo": true,
+      "detected_frames": 48,
+      "domain": "martial_arts",
+      "feedback": null,
+      "frames_processed": 77,
+      "id": "demo",
+      "processed_at": "2026-08-13T21:24:29Z",
+      "rendered_count": 0,
+      "report": "reports/demo/coaching/report.json",
+      "segment_count": 3,
+      "source": "fixtures/martialarts_clip.pgm.gz",
+      "summary": "reports/demo/coaching/summary.txt",
+      "title": "Demo \u2014 bundled sample clip"
+    },
+    {
       "clips": [
         {
           "annotated": true,
@@ -259,5 +275,5 @@
       "summary": "reports/view-usp-drivesdk/coaching/summary.txt"
     }
   ],
-  "updated_at": "2026-07-03T16:52:37Z"
+  "updated_at": "2026-08-13T21:24:29Z"
 }
