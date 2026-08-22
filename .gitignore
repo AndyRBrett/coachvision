@@ -16,3 +16,9 @@ drop/*
 /coaching/
 /results/metrics.json
 !/results/selftest.json
+
+# Secrets — never commit environment files. Nothing sensitive is committed
+# today; this is the guard against a stray .env landing in a public repo.
+.env
+.env.*
+!.env.example
