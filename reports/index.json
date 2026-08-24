@@ -8,7 +8,7 @@
       "feedback": null,
       "frames_processed": 77,
       "id": "demo",
-      "processed_at": "2026-08-17T06:59:43Z",
+      "processed_at": "2026-08-24T07:02:56Z",
       "rendered_count": 0,
       "report": "reports/demo/coaching/report.json",
       "segment_count": 3,
@@ -275,5 +275,5 @@
       "summary": "reports/view-usp-drivesdk/coaching/summary.txt"
     }
   ],
-  "updated_at": "2026-08-17T06:59:43Z"
+  "updated_at": "2026-08-24T07:02:56Z"
 }

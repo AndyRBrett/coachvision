@@ -7,7 +7,7 @@
   "failed_frames": 0,
   "footage_processed": 1,
   "frames_processed": 77,
-  "generated_at": "2026-08-17T06:59:43Z",
+  "generated_at": "2026-08-24T07:02:56Z",
   "segment_count": 3,
   "source": "fixtures/martialarts_clip.pgm.gz"
 }
