@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import tempfile
@@ -46,6 +47,72 @@ class TestPipelineSelfTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             result = pipeline.self_test(results_dir=tmp, verbose=False)
         self.assertEqual(result["report"]["segment_count"], 3)
+
+
+class TestSelfTestHistory(unittest.TestCase):
+    """Recurring self-test runs are tracked over time (Overseer #26) so a
+    dependency upgrade that silently shifts detection/segmentation is visible
+    as drift against the established baseline, not just a still-passing run."""
+
+    def test_first_run_becomes_baseline_with_no_drift(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pipeline.self_test(results_dir=tmp, verbose=False, domain="volleyball")
+            with open(os.path.join(tmp, "selftest.json")) as fh:
+                selftest = json.load(fh)
+            self.assertNotIn("drift", selftest)
+
+            with open(os.path.join(tmp, pipeline.HISTORY_FILENAME)) as fh:
+                history = json.load(fh)
+            self.assertEqual(len(history["volleyball"]), 1)
+            self.assertTrue(history["volleyball"][0]["ok"])
+
+    def test_repeated_run_matches_baseline_with_no_drift(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pipeline.self_test(results_dir=tmp, verbose=False, domain="volleyball")
+            pipeline.self_test(results_dir=tmp, verbose=False, domain="volleyball")
+            with open(os.path.join(tmp, pipeline.HISTORY_FILENAME)) as fh:
+                history = json.load(fh)
+            self.assertEqual(len(history["volleyball"]), 2)
+            with open(os.path.join(tmp, "selftest.json")) as fh:
+                selftest = json.load(fh)
+            self.assertNotIn("drift", selftest)
+
+    def test_segment_count_drift_is_flagged_against_baseline(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            drift = pipeline._record_history(
+                tmp, "volleyball", {"ok": True, "frames_processed": 77, "segment_count": 3},
+            )
+            self.assertEqual(drift, [])
+            drift = pipeline._record_history(
+                tmp, "volleyball", {"ok": True, "frames_processed": 77, "segment_count": 2},
+            )
+            self.assertEqual(drift, ["segment_count: 3 -> 2"])
+
+    def test_ok_flip_is_flagged_and_history_keeps_the_failed_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pipeline._record_history(
+                tmp, "volleyball", {"ok": True, "frames_processed": 77, "segment_count": 3},
+            )
+            drift = pipeline._record_history(
+                tmp, "volleyball", {"ok": False, "frames_processed": 0, "segment_count": 0},
+            )
+            self.assertIn("ok: True -> False", drift)
+            with open(os.path.join(tmp, pipeline.HISTORY_FILENAME)) as fh:
+                history = json.load(fh)
+            self.assertEqual(len(history["volleyball"]), 2)
+            self.assertFalse(history["volleyball"][-1]["ok"])
+
+    def test_history_is_capped_at_max_entries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for i in range(pipeline.MAX_HISTORY_ENTRIES + 5):
+                pipeline._record_history(
+                    tmp, "volleyball", {"ok": True, "frames_processed": 77, "segment_count": 3, "run": i},
+                )
+            with open(os.path.join(tmp, pipeline.HISTORY_FILENAME)) as fh:
+                history = json.load(fh)
+            self.assertEqual(len(history["volleyball"]), pipeline.MAX_HISTORY_ENTRIES)
+            # Oldest entries roll off; the newest run is kept.
+            self.assertEqual(history["volleyball"][-1]["run"], pipeline.MAX_HISTORY_ENTRIES + 4)
 
 
 if __name__ == "__main__":
