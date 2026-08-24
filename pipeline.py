@@ -35,8 +35,9 @@ REFERENCE_EVENTS = os.path.join(HERE, "fixtures", "reference_clip.events.json")
 
 DEFAULT_RESULTS_DIR = "results"
 HISTORY_FILENAME = "selftest_history.json"
-# ~a year of weekly overseer runs; oldest entries roll off so the history file
-# doesn't grow unbounded.
+# ~a year of weekly overseer runs so the history file doesn't grow unbounded.
+# The pinned baseline (entry 0) always survives the cap; it's the older middle
+# of the trend that rolls off.
 MAX_HISTORY_ENTRIES = 52
 # Nominal calibration for the volleyball reference clip: a 9 m court width spans
 # the 80 px frame -> 0.1125 m/px. Used only to show illustrative metric speeds.
@@ -136,7 +137,12 @@ def _record_history(results_dir, domain_key, entry):
                 drift.append(f"{key}: {baseline.get(key)} -> {entry.get(key)}")
 
     domain_history.append(entry)
-    del domain_history[:-MAX_HISTORY_ENTRIES]
+    if len(domain_history) > MAX_HISTORY_ENTRIES:
+        # Roll off the middle of the trend, not the front: entry 0 is the
+        # pinned baseline every later run is compared against, so dropping it
+        # would silently re-baseline the domain onto a sliding recent run.
+        first, rest = domain_history[0], domain_history[1:]
+        domain_history[:] = [first] + rest[len(rest) - MAX_HISTORY_ENTRIES + 1:]
     os.makedirs(results_dir, exist_ok=True)
     with open(path, "w") as fh:
         json.dump(history, fh, indent=2, sort_keys=True)

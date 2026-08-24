@@ -111,8 +111,23 @@ class TestSelfTestHistory(unittest.TestCase):
             with open(os.path.join(tmp, pipeline.HISTORY_FILENAME)) as fh:
                 history = json.load(fh)
             self.assertEqual(len(history["volleyball"]), pipeline.MAX_HISTORY_ENTRIES)
-            # Oldest entries roll off; the newest run is kept.
+            # The middle of the trend rolls off; the newest run is kept, and so
+            # is the baseline the newest run is compared against.
             self.assertEqual(history["volleyball"][-1]["run"], pipeline.MAX_HISTORY_ENTRIES + 4)
+            self.assertEqual(history["volleyball"][0]["run"], 0)
+
+    def test_baseline_survives_the_cap_and_still_flags_drift(self):
+        """Past the cap, drift is still measured against the original run --
+        not against a sliding recent one that would hide a slow regression."""
+        with tempfile.TemporaryDirectory() as tmp:
+            pipeline._record_history(
+                tmp, "volleyball", {"ok": True, "frames_processed": 77, "segment_count": 3},
+            )
+            for _ in range(pipeline.MAX_HISTORY_ENTRIES + 5):
+                drift = pipeline._record_history(
+                    tmp, "volleyball", {"ok": True, "frames_processed": 77, "segment_count": 2},
+                )
+            self.assertEqual(drift, ["segment_count: 3 -> 2"])
 
 
 if __name__ == "__main__":
