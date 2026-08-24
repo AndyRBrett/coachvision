@@ -119,7 +119,7 @@ def build_selftest_summary(selftest: dict) -> dict:
     if not selftest:
         return {"ok": False, "verified_at": None}
     summary = {"ok": bool(selftest.get("ok"))}
-    for key in ("verified_at", "frames_processed", "segment_count", "clip", "domain"):
+    for key in ("verified_at", "frames_processed", "segment_count", "clip", "domain", "drift"):
         if key in selftest:
             summary[key] = selftest[key]
     return summary

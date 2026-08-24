@@ -15,7 +15,10 @@ Stages
 Running it on a real clip writes the manifest + coaching report + a results
 metrics file (results/metrics.json) that write_status.py reads, so processed
 frames show up in the overseer status. Running --self-test additionally writes
-results/selftest.json proving the pipeline is alive.
+results/selftest.json proving the pipeline is alive, and appends the run to
+results/selftest_history.json so a scheduled recurring self-test (independent
+of whether any footage was ingested) can be compared against its established
+baseline and flag drift.
 """
 import json
 import os
@@ -31,6 +34,10 @@ REFERENCE_CLIP = os.path.join(HERE, "fixtures", "reference_clip.pgm.gz")
 REFERENCE_EVENTS = os.path.join(HERE, "fixtures", "reference_clip.events.json")
 
 DEFAULT_RESULTS_DIR = "results"
+HISTORY_FILENAME = "selftest_history.json"
+# ~a year of weekly overseer runs; oldest entries roll off so the history file
+# doesn't grow unbounded.
+MAX_HISTORY_ENTRIES = 52
 # Nominal calibration for the volleyball reference clip: a 9 m court width spans
 # the 80 px frame -> 0.1125 m/px. Used only to show illustrative metric speeds.
 REFERENCE_M_PER_PX = 9.0 / 80.0
@@ -101,6 +108,42 @@ def run_pipeline(
     return {"tracking": tracking, "manifest": manifest, "report": report, "metrics": metrics}
 
 
+def _record_history(results_dir, domain_key, entry):
+    """Append one self-test run to results/selftest_history.json and compare it
+    against the established baseline (the earliest recorded run for this domain).
+
+    The baseline is set once, by the first run ever recorded for a domain, and
+    never moves -- so a dependency upgrade that silently changes detection or
+    segmentation shows up as drift even on a run that still technically passes.
+    Returns a list of human-readable drift descriptions (empty if none).
+    """
+    path = os.path.join(results_dir, HISTORY_FILENAME)
+    try:
+        with open(path) as fh:
+            history = json.load(fh)
+    except (FileNotFoundError, ValueError):
+        history = {}
+
+    domain_history = history.setdefault(domain_key, [])
+    baseline = domain_history[0] if domain_history else None
+
+    drift = []
+    if baseline is not None:
+        if bool(entry.get("ok")) != bool(baseline.get("ok")):
+            drift.append(f"ok: {baseline.get('ok')} -> {entry.get('ok')}")
+        for key in ("frames_processed", "segment_count"):
+            if baseline.get(key) != entry.get(key):
+                drift.append(f"{key}: {baseline.get(key)} -> {entry.get(key)}")
+
+    domain_history.append(entry)
+    del domain_history[:-MAX_HISTORY_ENTRIES]
+    os.makedirs(results_dir, exist_ok=True)
+    with open(path, "w") as fh:
+        json.dump(history, fh, indent=2, sort_keys=True)
+        fh.write("\n")
+    return drift
+
+
 def self_test(results_dir=DEFAULT_RESULTS_DIR, verbose=True, domain=None):
     """Run the full pipeline on a domain's bundled reference clip and validate it.
 
@@ -108,7 +151,12 @@ def self_test(results_dir=DEFAULT_RESULTS_DIR, verbose=True, domain=None):
     COACHVISION_DOMAIN). Returns the result dict on success; raises AssertionError
     if any stage produces an obviously-broken result (no frames, no segments,
     empty report). Also writes ``results/selftest.json`` so the overseer can see
-    the pipeline was verified end-to-end, for which domain, and on what date.
+    the pipeline was verified end-to-end, for which domain, and on what date, and
+    appends the run to ``results/selftest_history.json`` so a scheduled recurring
+    run (e.g. weekly, independent of whether any real footage was ingested) can
+    be compared against its established baseline -- catching a silent drift in
+    frames_processed/segment_count/ok (from a dependency upgrade, say) even on a
+    run that still technically passes.
     """
     domain = domains.get_domain(domain)
     if domain.key not in DOMAIN_FIXTURES:
@@ -119,20 +167,8 @@ def self_test(results_dir=DEFAULT_RESULTS_DIR, verbose=True, domain=None):
     tracking = result["tracking"]
     report = result["report"]
 
-    # Guardrails: these are exactly the silent regressions the self-test exists
-    # to catch -- a detector that finds nothing, or a pipeline that produces no
-    # segments/coaching output, would otherwise pass unnoticed as "0 frames".
     seg = domain.segment_plural
-    assert tracking["frame_count"] > 0, "detector read zero frames"
-    assert tracking["detected_frames"] > 0, f"detector found the {domain.subject_noun} in zero frames"
-    assert report["segment_count"] >= 1, f"no {seg} segmented from the reference clip"
-    assert report["total_play_s"] > 0, f"{seg} have zero total play time"
-    assert any(r["tags"] for r in report["segments"]), f"no coaching tags attached to any {domain.segment_noun}"
-    assert report["action_heatmap"]["actions_binned"] > 0, f"no {domain.action_plural} binned into the heatmap"
-    assert any(r["subject_speed"] for r in report["segments"]), f"{domain.subject_noun} speed could not be measured"
-
     selftest = {
-        "ok": True,
         "verified_at": _utc_now_iso(),
         "domain": domain.key,
         "clip": os.path.relpath(clip, HERE),
@@ -140,6 +176,30 @@ def self_test(results_dir=DEFAULT_RESULTS_DIR, verbose=True, domain=None):
         "detected_frames": tracking["detected_frames"],
         "segment_count": report["segment_count"],
     }
+
+    # Guardrails: these are exactly the silent regressions the self-test exists
+    # to catch -- a detector that finds nothing, or a pipeline that produces no
+    # segments/coaching output, would otherwise pass unnoticed as "0 frames".
+    # A failure is still recorded to history (ok: False) before re-raising, so
+    # the drift trend captures the outage instead of just losing that run.
+    try:
+        assert tracking["frame_count"] > 0, "detector read zero frames"
+        assert tracking["detected_frames"] > 0, f"detector found the {domain.subject_noun} in zero frames"
+        assert report["segment_count"] >= 1, f"no {seg} segmented from the reference clip"
+        assert report["total_play_s"] > 0, f"{seg} have zero total play time"
+        assert any(r["tags"] for r in report["segments"]), f"no coaching tags attached to any {domain.segment_noun}"
+        assert report["action_heatmap"]["actions_binned"] > 0, f"no {domain.action_plural} binned into the heatmap"
+        assert any(r["subject_speed"] for r in report["segments"]), f"{domain.subject_noun} speed could not be measured"
+    except AssertionError:
+        selftest["ok"] = False
+        if results_dir:
+            _record_history(results_dir, domain.key, selftest)
+        raise
+    selftest["ok"] = True
+
+    drift = _record_history(results_dir, domain.key, selftest) if results_dir else []
+    if drift:
+        selftest["drift"] = drift
     if results_dir:
         os.makedirs(results_dir, exist_ok=True)
         with open(os.path.join(results_dir, "selftest.json"), "w") as fh:
@@ -152,6 +212,8 @@ def self_test(results_dir=DEFAULT_RESULTS_DIR, verbose=True, domain=None):
         print(f"SELF-TEST OK ({domain.label}): processed {selftest['frames_processed']} frames, "
               f"{selftest['segment_count']} {seg}, "
               f"{report['action_heatmap']['actions_binned']} {domain.action_plural} binned.")
+        if drift:
+            print(f"SELF-TEST DRIFT ({domain.label}) vs baseline: {'; '.join(drift)}")
     return result
 
 
