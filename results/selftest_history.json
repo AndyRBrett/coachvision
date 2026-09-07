@@ -8,6 +8,15 @@
       "ok": true,
       "segment_count": 3,
       "verified_at": "2026-08-31T13:03:30Z"
+    },
+    {
+      "clip": "fixtures/martialarts_clip.pgm.gz",
+      "detected_frames": 48,
+      "domain": "martial_arts",
+      "frames_processed": 77,
+      "ok": true,
+      "segment_count": 3,
+      "verified_at": "2026-09-07T11:55:24Z"
     }
   ]
 }
