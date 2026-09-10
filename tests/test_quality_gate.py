@@ -47,13 +47,27 @@ class TestProbeMetadata(unittest.TestCase):
 
 
 class TestCheckClipQuality(unittest.TestCase):
+    # Every module-level name these tests stub. Saved and restored as a SET
+    # rather than one attribute at a time: the per-name form silently stopped
+    # covering sampled_elapsed_seconds when it was added, leaving a stub in
+    # place for the rest of the suite and making the run order-dependent
+    # (Codex P3 on #44). Adding a name to this tuple is now the only thing a
+    # new stub needs.
+    PATCHED = ("probe_metadata", "sample_mean_luminance", "sampled_elapsed_seconds")
+
     def setUp(self):
-        self._orig_probe = quality_gate.probe_metadata
-        self._orig_lum = quality_gate.sample_mean_luminance
+        self._orig = {name: getattr(quality_gate, name) for name in self.PATCHED}
 
     def tearDown(self):
-        quality_gate.probe_metadata = self._orig_probe
-        quality_gate.sample_mean_luminance = self._orig_lum
+        for name, func in self._orig.items():
+            setattr(quality_gate, name, func)
+
+    def test_every_stubbed_name_is_restored(self):
+        # The guard on the guard: a stub applied to a name missing from PATCHED
+        # would leak, and the symptom is a DIFFERENT test failing later for no
+        # visible reason.
+        for name in self.PATCHED:
+            self.assertTrue(hasattr(quality_gate, name), name)
 
     def test_corrupt_file(self):
         quality_gate.probe_metadata = lambda src: (_ for _ in ()).throw(ValueError("no stream"))
@@ -81,7 +95,7 @@ class TestCheckClipQuality(unittest.TestCase):
         # this far: ffprobe fails on it and probe_metadata answers corrupt_file.
         quality_gate.probe_metadata = lambda src: {
             "width": 320, "height": 240, "duration": None, "fps": 30.0}
-        quality_gate.sampled_frame_count = lambda src, seconds=1.0: 30
+        quality_gate.sampled_elapsed_seconds = lambda src, seconds=2.0: 4.9
         quality_gate.sample_mean_luminance = lambda src: 120.0
         result = quality_gate.check_clip_quality("no-duration.mp4")
         self.assertTrue(result["ok"], result)
@@ -90,14 +104,37 @@ class TestCheckClipQuality(unittest.TestCase):
         # Codex P2 on #44. Admitting unknown-duration inputs must not leave the
         # too_short gate unenforced for exactly those inputs -- a raw elementary
         # stream can report dimensions and rate with no duration and still be a
-        # fifth of a second long. 6 frames at 30fps is 0.2s.
+        # fifth of a second long.
         quality_gate.probe_metadata = lambda src: {
             "width": 320, "height": 240, "duration": None, "fps": 30.0}
-        quality_gate.sampled_frame_count = lambda src, seconds=1.0: 6
+        quality_gate.sampled_elapsed_seconds = lambda src, seconds=2.0: 0.2
         quality_gate.sample_mean_luminance = lambda src: 120.0
         result = quality_gate.check_clip_quality("short-no-duration.mp4")
         self.assertFalse(result["ok"])
         self.assertEqual(result["reason"], quality_gate.REASON_TOO_SHORT)
+
+    def test_a_variable_frame_rate_clip_is_not_rejected_on_its_nominal_rate(self):
+        # Codex P2 on 45eaf97, and it was a regression in the same spirit as the
+        # bug it followed. r_frame_rate is the stream's NOMINAL base rate, so a
+        # real one-second VFR phone clip can carry far fewer frames than it
+        # implies -- and counting frames against it rejected exactly the footage
+        # this branch exists to admit. Length is measured from TIMESTAMPS now,
+        # so a clip whose packets span a second passes whatever its frame count.
+        quality_gate.probe_metadata = lambda src: {
+            "width": 320, "height": 240, "duration": None, "fps": 30.0}
+        quality_gate.sampled_elapsed_seconds = lambda src, seconds=2.0: 1.02
+        quality_gate.sample_mean_luminance = lambda src: 120.0
+        result = quality_gate.check_clip_quality("vfr-phone-clip.mp4")
+        self.assertTrue(result["ok"], result)
+
+    def test_unmeasurable_length_proceeds(self):
+        # No readable timestamps is another "cannot tell", and cannot-tell does
+        # not imply the decode fails. Only a MEASURED span rejects.
+        quality_gate.probe_metadata = lambda src: {
+            "width": 320, "height": 240, "duration": None, "fps": 30.0}
+        quality_gate.sampled_elapsed_seconds = lambda src, seconds=2.0: None
+        quality_gate.sample_mean_luminance = lambda src: 120.0
+        self.assertTrue(quality_gate.check_clip_quality("no-timestamps.mp4")["ok"])
 
     def test_an_empty_frame_sample_is_corrupt_not_acceptable(self):
         # Codex P2 on #44, and it corrects the symmetry the first pass reached

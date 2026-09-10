@@ -36,12 +36,10 @@ SAMPLE_DURATION_S = 3.0
 # Mean luminance (0-255, PGM bytes are already grayscale) below this reads as a
 # lens-cap-on / dark-room clip rather than real footage.
 MIN_MEAN_LUMINANCE = 16.0
-# When the container carries no duration, length is MEASURED instead: decode the
-# first MIN_DURATION_S at native frame rate and count what comes out. A stream
-# that ends early yields fewer frames than its own fps implies. The tolerance
-# absorbs rounding and variable frame rate -- the check is meant to catch a clip
-# that is a fifth of a second long, not to adjudicate 0.95s against 1.0s.
-MIN_LENGTH_FRAME_TOLERANCE = 0.8
+# When the container carries no duration, length is MEASURED from packet
+# TIMESTAMPS. Reading ahead by twice the minimum is enough to prove a clip
+# clears it and never scans a long file.
+LENGTH_PROBE_SECONDS = MIN_DURATION_S * 2
 
 REASON_TOO_SHORT = "too_short"
 REASON_TOO_DARK = "too_dark"
@@ -103,33 +101,15 @@ def probe_metadata(src):
     }
 
 
-def _sample_decode_cmd(src, fps=SAMPLE_FPS, seconds=SAMPLE_DURATION_S):
-    """ffmpeg argv for a tiny grayscale frame sample.
-
-    ``fps=None`` samples at the source's own frame rate, which is what the
-    length measurement needs -- thinning to 1fps would make every clip shorter
-    than a second look identical.
-    """
-    filters = [] if fps is None else [f"fps={fps}"]
-    filters += [f"scale={SAMPLE_WIDTH}:-2", "format=gray"]
+def _sample_decode_cmd(src):
+    """ffmpeg argv for a tiny grayscale frame sample, used for the exposure check."""
+    vf = f"fps={SAMPLE_FPS},scale={SAMPLE_WIDTH}:-2,format=gray"
     return [
         "ffmpeg", "-nostdin", "-loglevel", "error",
-        "-t", str(seconds), "-i", src,
-        "-vf", ",".join(filters),
+        "-t", str(SAMPLE_DURATION_S), "-i", src,
+        "-vf", vf,
         "-f", "image2pipe", "-vcodec", "pgm", "pipe:1",
     ]
-
-
-def _sample_frames(src, fps=SAMPLE_FPS, seconds=SAMPLE_DURATION_S):
-    """Decode a tiny grayscale sample of ``src`` and return its frames."""
-    pgm_bytes = decode_video._run_ffmpeg(_sample_decode_cmd(src, fps, seconds))
-    if not pgm_bytes:
-        return []
-    with tempfile.NamedTemporaryFile(suffix=".pgm") as tmp:
-        tmp.write(pgm_bytes)
-        tmp.flush()
-        _w, _h, frames = detect.load_pgm_frames(tmp.name)
-    return frames
 
 
 def sample_mean_luminance(src):
@@ -139,7 +119,13 @@ def sample_mean_luminance(src):
     luminance) at a fraction of the real decode's resolution/frame rate/length.
     Returns None if the sample produced no frames.
     """
-    frames = _sample_frames(src)
+    pgm_bytes = decode_video._run_ffmpeg(_sample_decode_cmd(src))
+    if not pgm_bytes:
+        return None
+    with tempfile.NamedTemporaryFile(suffix=".pgm") as tmp:
+        tmp.write(pgm_bytes)
+        tmp.flush()
+        _w, _h, frames = detect.load_pgm_frames(tmp.name)
     if not frames:
         return None
     total = sum(sum(frame) for frame in frames)
@@ -147,9 +133,34 @@ def sample_mean_luminance(src):
     return total / pixel_count if pixel_count else None
 
 
-def sampled_frame_count(src, seconds=MIN_DURATION_S):
-    """Frames decoded from the first ``seconds`` of ``src``, at its native rate."""
-    return len(_sample_frames(src, fps=None, seconds=seconds))
+def sampled_elapsed_seconds(src, seconds=LENGTH_PROBE_SECONDS):
+    """Presentation time spanned by the first ``seconds`` of ``src``, or None.
+
+    TIMESTAMPS, not a frame count. `r_frame_rate` is the stream's NOMINAL base
+    rate, and a variable-frame-rate clip -- which is what phones record -- can
+    carry far fewer frames in a real second than that rate implies. Counting
+    frames against it would reject exactly the footage the unknown-duration
+    branch exists to admit, which is the failure this whole clause was written
+    to avoid.
+
+    Returns None when no timestamps are readable: that is "cannot measure",
+    handled by the caller, and distinct from "measured, and short".
+    """
+    data = _run_ffprobe([
+        "ffprobe", "-v", "error", "-select_streams", "v:0",
+        "-show_entries", "packet=pts_time", "-of", "json",
+        "-read_intervals", f"%+{seconds}", src,
+    ])
+    times = []
+    for packet in data.get("packets") or []:
+        try:
+            times.append(float(packet.get("pts_time")))
+        except (TypeError, ValueError):
+            continue          # a packet with no usable timestamp, not a failure
+    if not times:
+        return None
+    # max - min, not max: a stream need not start its presentation clock at 0.
+    return max(times) - min(times)
 
 
 def check_clip_quality(src):
@@ -201,19 +212,25 @@ def check_clip_quality(src):
             }
     else:
         try:
-            frames = sampled_frame_count(src)
-        except RuntimeError as exc:  # ffmpeg failed on a file ffprobe accepted
+            elapsed = sampled_elapsed_seconds(src)
+        except ValueError as exc:  # ffprobe failed on a file it just described
             return {"ok": False, "reason": REASON_CORRUPT_FILE, "detail": str(exc),
                     "metadata": metadata}
-        needed = max(1, int(metadata["fps"] * MIN_DURATION_S * MIN_LENGTH_FRAME_TOLERANCE))
-        if frames < needed:
-            return {
-                "ok": False, "reason": REASON_TOO_SHORT,
-                "detail": (f"no duration in metadata and only {frames} frame(s) in the "
-                           f"first {MIN_DURATION_S}s at {metadata['fps']:.3g}fps "
-                           f"(expected at least {needed})"),
-                "metadata": metadata,
-            }
+        # No readable timestamps is another "cannot tell", and cannot-tell does
+        # not imply the decode fails -- so it proceeds, like an unreadable
+        # duration itself. Only a MEASURED span rejects.
+        if elapsed is not None:
+            # The span of N frames is one frame-interval short of their real
+            # elapsed time, so allow that much rather than failing a clip that
+            # is exactly at the minimum.
+            slack = 1.0 / metadata["fps"] if metadata["fps"] else 0.0
+            if elapsed < MIN_DURATION_S - slack:
+                return {
+                    "ok": False, "reason": REASON_TOO_SHORT,
+                    "detail": (f"no duration in metadata; timestamps span only "
+                               f"{elapsed:.3g}s of the {MIN_DURATION_S}s minimum"),
+                    "metadata": metadata,
+                }
 
     try:
         luminance = sample_mean_luminance(src)
