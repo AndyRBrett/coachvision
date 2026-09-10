@@ -1,10 +1,89 @@
 import os
 import sys
 import unittest
+from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import write_status  # noqa: E402
+
+
+class TestRejectedFootageIsNotAbsentFootage(unittest.TestCase):
+    """Overseer #45.
+
+    A clip the quality gate turns away never reaches the pipeline, so it never
+    updates last_footage_at and days_since climbs exactly as if nothing had been
+    sent. Upload daily, have every clip refused, and the nudge asked for the one
+    action already being taken while the real problem sat unmentioned in the
+    same file. Opposite states, identical rendering.
+    """
+
+    NOW = datetime(2026, 9, 10, 12, 0, tzinfo=timezone.utc)
+
+    def _gate(self, days_ago, reason="too_dark", total=3):
+        at = (self.NOW - timedelta(days=days_ago)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return {"rejected_total": total,
+                "last_rejection": {"rejected_at": at, "reason": reason}}
+
+    def test_recent_rejections_replace_the_idle_nudge(self):
+        msg = write_status.build_nudge(20, 14, 0, quality_gate=self._gate(1),
+                                       now=self.NOW)
+        self.assertIn("arriving but not usable", msg)
+        self.assertIn("too_dark", msg)
+        self.assertNotIn("pipeline is idle", msg)
+
+    def test_they_also_replace_the_never_ingested_nudge(self):
+        # The likeliest shape of the bug: every clip ever sent was rejected, so
+        # last_footage_at was never set at all and the panel said nobody had
+        # ever sent anything.
+        msg = write_status.build_nudge(None, 14, 0, quality_gate=self._gate(2),
+                                       now=self.NOW)
+        self.assertIn("arriving but not usable", msg)
+        self.assertNotIn("never been ingested", msg)
+
+    def test_a_stale_rejection_does_not_mask_real_idleness(self):
+        # Past the window nothing has arrived for a threshold period either way,
+        # so the plain idle reading is the true one again.
+        msg = write_status.build_nudge(40, 14, 0, quality_gate=self._gate(30),
+                                       now=self.NOW)
+        self.assertIn("pipeline is idle", msg)
+
+    def test_the_rejection_window_is_the_idle_threshold(self):
+        # Not a second constant. Two definitions of "lately" in one file is how
+        # the dashboard ended up with two clocks.
+        inside = write_status.build_nudge(20, 14, 0, quality_gate=self._gate(14),
+                                          now=self.NOW)
+        outside = write_status.build_nudge(20, 14, 0, quality_gate=self._gate(15),
+                                           now=self.NOW)
+        self.assertIn("arriving but not usable", inside)
+        self.assertIn("pipeline is idle", outside)
+
+    def test_flowing_footage_still_nudges_about_nothing(self):
+        # A rejection alongside working ingest is already visible in the
+        # quality_gate block; it does not need a headline.
+        self.assertIsNone(write_status.build_nudge(3, 14, 0,
+                                                   quality_gate=self._gate(1),
+                                                   now=self.NOW))
+
+    def test_a_stalled_queue_still_wins(self):
+        # Clips sitting unprocessed is a different failure from clips being
+        # refused, and the more urgent one.
+        msg = write_status.build_nudge(None, 14, 2, quality_gate=self._gate(1),
+                                       now=self.NOW)
+        self.assertIn("queued but unprocessed", msg)
+
+    def test_an_unparseable_rejection_timestamp_is_ignored(self):
+        # Never fabricate an age. A rejection whose stamp cannot be read must
+        # not silently suppress the idle nudge.
+        gate = {"rejected_total": 1,
+                "last_rejection": {"rejected_at": "not-a-date", "reason": "too_dark"}}
+        msg = write_status.build_nudge(20, 14, 0, quality_gate=gate, now=self.NOW)
+        self.assertIn("pipeline is idle", msg)
+
+    def test_no_gate_block_behaves_exactly_as_before(self):
+        for gate in (None, {}, {"rejected_total": 0, "last_rejection": None}):
+            msg = write_status.build_nudge(20, 14, 0, quality_gate=gate, now=self.NOW)
+            self.assertIn("pipeline is idle", msg, gate)
 
 
 class TestBuildNudge(unittest.TestCase):

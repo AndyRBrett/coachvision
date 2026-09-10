@@ -111,15 +111,48 @@ def _idle_threshold_days() -> int:
         return DEFAULT_IDLE_THRESHOLD_DAYS
 
 
-def build_nudge(days_since, threshold, pending):
+def build_nudge(days_since, threshold, pending, quality_gate=None, now=None):
     """Return a human-readable idle nudge, or None when footage is flowing.
 
     Fires when footage has never been ingested, or when the last ingest is older
     than ``threshold`` days. If clips are already queued, the nudge points at the
     stalled queue instead of asking for more footage.
+
+    REJECTED FOOTAGE IS NOT ABSENT FOOTAGE (Overseer #45). A clip the quality
+    gate turns away never reaches the pipeline, so it never updates
+    ``last_footage_at`` and ``days_since`` keeps climbing exactly as though
+    nothing had been sent. Upload daily and have every clip refused and the
+    nudge would read "no new footage -- pipeline is idle", asking for the one
+    action already being taken, while the real problem sits unmentioned in the
+    same status file. The two states are opposites and they rendered
+    identically; worse than silence, because it sends someone to do the wrong
+    thing.
+
+    A rejection only speaks for the window the idle nudge itself uses. Reusing
+    ``threshold`` rather than inventing a second constant is deliberate: this
+    file would then hold two definitions of "lately", and a second definition of
+    recency is how the dashboard ended up with two clocks. Past that window
+    nothing has arrived for a threshold period either way, so the plain idle
+    reading is the true one again.
     """
     if pending > 0 and (days_since is None or days_since > threshold):
         return f"{pending} clip(s) queued but unprocessed -- pipeline may be stalled."
+
+    # Checked BEFORE the two idle branches, and only where one of them would
+    # have fired: while footage is flowing normally there is nothing to nudge
+    # about, and a rejection alongside working ingest is already visible in the
+    # quality_gate block without a headline.
+    if days_since is None or days_since > threshold:
+        rejection = (quality_gate or {}).get("last_rejection") or {}
+        age = _days_since(rejection.get("rejected_at"),
+                          now or datetime.now(timezone.utc))
+        if age is not None and age <= threshold:
+            total = (quality_gate or {}).get("rejected_total") or 0
+            reason = rejection.get("reason") or "unknown"
+            return (f"Footage is arriving but not usable -- {total} clip(s) rejected "
+                    f"before processing, most recently {reason}. "
+                    f"Check the source rather than sending more.")
+
     if days_since is None:
         return "No footage has ever been ingested -- drop clips in the watched folder to start."
     if days_since > threshold:
@@ -190,7 +223,8 @@ def build_status(results: dict, pending_footage: int = 0, selftest: dict = None,
     # visible rather than silently passing as healthy.
     threshold = _idle_threshold_days()
     days_since = status["days_since_last_footage"]
-    nudge = build_nudge(days_since, threshold, pending_footage)
+    nudge = build_nudge(days_since, threshold, pending_footage,
+                        quality_gate=quality_gate, now=now)
     status["idle_threshold_days"] = threshold
     status["pending_footage"] = pending_footage
     status["needs_footage"] = nudge is not None
