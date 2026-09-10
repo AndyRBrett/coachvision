@@ -157,10 +157,22 @@ def check_clip_quality(src):
             "metadata": metadata,
         }
 
-    if metadata["duration"] is None or metadata["duration"] < MIN_DURATION_S:
+    # An UNKNOWN duration is not a short duration, and this gate must not
+    # discard footage on the strength of missing metadata. Some containers
+    # simply do not carry one -- a fragmented MP4 from a phone, a stream copy --
+    # and mobile quick-upload (#34) is exactly the ingest path this gate was
+    # asked for. A genuinely truncated or half-written file does not reach this
+    # line: ffprobe fails outright on it and probe_metadata already answers
+    # corrupt_file.
+    #
+    # This is the same call made for luminance below, and the opposite of the
+    # one made for frame rate above: an unreadable fps means the decode itself
+    # cannot be planned, while an unreadable duration costs only this check.
+    # Three unknowns, and each is answered on what its absence actually implies.
+    if metadata["duration"] is not None and metadata["duration"] < MIN_DURATION_S:
         return {
             "ok": False, "reason": REASON_TOO_SHORT,
-            "detail": f"duration {metadata['duration']!r}s is below the {MIN_DURATION_S}s minimum",
+            "detail": f"duration {metadata['duration']}s is below the {MIN_DURATION_S}s minimum",
             "metadata": metadata,
         }
 

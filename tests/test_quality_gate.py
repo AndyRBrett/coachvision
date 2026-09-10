@@ -73,6 +73,27 @@ class TestCheckClipQuality(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertEqual(result["reason"], quality_gate.REASON_TOO_SHORT)
 
+    def test_unknown_duration_is_not_treated_as_too_short(self):
+        # A container that carries no duration is not a short clip, and this
+        # gate must not discard footage on missing metadata. Fragmented MP4s
+        # from a phone are the case -- and mobile quick-upload (#34) is one of
+        # the ingest paths this gate was asked for. A truncated file never gets
+        # this far: ffprobe fails on it and probe_metadata answers corrupt_file.
+        quality_gate.probe_metadata = lambda src: {
+            "width": 320, "height": 240, "duration": None, "fps": 30.0}
+        quality_gate.sample_mean_luminance = lambda src: 120.0
+        result = quality_gate.check_clip_quality("no-duration.mp4")
+        self.assertTrue(result["ok"], result)
+
+    def test_a_known_short_duration_is_still_rejected(self):
+        # The other half of the change above: relaxing the unknown case must not
+        # relax the case the check exists for.
+        quality_gate.probe_metadata = lambda src: {
+            "width": 320, "height": 240, "duration": 0.2, "fps": 30.0}
+        result = quality_gate.check_clip_quality("short.mp4")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["reason"], quality_gate.REASON_TOO_SHORT)
+
     def test_unreadable_frame_rate_is_corrupt(self):
         quality_gate.probe_metadata = lambda src: {"width": 320, "height": 240, "duration": 5.0, "fps": None}
         result = quality_gate.check_clip_quality("nofps.mp4")
