@@ -176,24 +176,39 @@ def sampled_elapsed_seconds(src, seconds=LENGTH_PROBE_SECONDS):
     branch exists to admit, which is the failure this whole clause was written
     to avoid.
 
+    The span runs to the END of the last frame, not to when it starts.
+    `duration_time` is read alongside `pts_time` for that reason: a
+    variable-frame-rate stream can hold its final frame far longer than any
+    nominal interval, so a real one-second clip whose packets stop at 0.4s is
+    a one-second clip, and measuring only between start times would call it
+    0.4s and reject it. The caller's one-frame slack cannot rescue that,
+    because for VFR the nominal rate is not the final interval.
+
     Returns None when no timestamps are readable: that is "cannot measure",
     handled by the caller, and distinct from "measured, and short".
     """
     data = _run_ffprobe([
         "ffprobe", "-v", "error", "-select_streams", "v:0",
-        "-show_entries", "packet=pts_time", "-of", "json",
+        "-show_entries", "packet=pts_time,duration_time", "-of", "json",
         "-read_intervals", f"%+{seconds}", src,
     ])
-    times = []
+    starts, ends = [], []
     for packet in data.get("packets") or []:
         try:
-            times.append(float(packet.get("pts_time")))
+            pts = float(packet.get("pts_time"))
         except (TypeError, ValueError):
             continue          # a packet with no usable timestamp, not a failure
-    if not times:
+        starts.append(pts)
+        try:
+            # Absent duration degrades to the start time, which is the old
+            # behaviour and still bounded below by the truth.
+            ends.append(pts + float(packet.get("duration_time")))
+        except (TypeError, ValueError):
+            ends.append(pts)
+    if not starts:
         return None
-    # max - min, not max: a stream need not start its presentation clock at 0.
-    return max(times) - min(times)
+    # min(starts), not zero: a stream need not start its presentation clock at 0.
+    return max(ends) - min(starts)
 
 
 def check_clip_quality(src):

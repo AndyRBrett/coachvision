@@ -205,6 +205,66 @@ class TestCheckClipQuality(unittest.TestCase):
         self.assertEqual(result["metadata"]["width"], 320)
 
 
+class TestSampledElapsedSeconds(unittest.TestCase):
+    """The unknown-duration length measurement, parsed from ffprobe packets."""
+
+    def setUp(self):
+        self._orig = quality_gate._run_ffprobe
+
+    def tearDown(self):
+        quality_gate._run_ffprobe = self._orig
+
+    def _packets(self, rows):
+        quality_gate._run_ffprobe = lambda cmd: {"packets": rows}
+
+    def test_the_span_runs_to_the_end_of_the_last_frame(self):
+        # Codex P2 on 1373c6b. A VFR stream can hold its final frame far longer
+        # than any nominal interval: packets stop at 0.4s, the frame is shown
+        # until 1.0s, and the clip really is a second long. Measuring only
+        # between START times called it 0.4s and rejected it -- and the caller's
+        # 1/r_frame_rate slack cannot rescue that, because for VFR the nominal
+        # rate is not the final interval.
+        self._packets([
+            {"pts_time": "0.000000", "duration_time": "0.200000"},
+            {"pts_time": "0.200000", "duration_time": "0.200000"},
+            {"pts_time": "0.400000", "duration_time": "0.600000"},
+        ])
+        self.assertAlmostEqual(quality_gate.sampled_elapsed_seconds("vfr.mp4"), 1.0)
+
+    def test_a_missing_duration_falls_back_to_the_start_time(self):
+        # Degrades to the previous behaviour rather than failing, and is still
+        # bounded below by the truth.
+        self._packets([
+            {"pts_time": "0.000000"},
+            {"pts_time": "0.400000", "duration_time": "n/a"},
+        ])
+        self.assertAlmostEqual(quality_gate.sampled_elapsed_seconds("odd.mp4"), 0.4)
+
+    def test_a_nonzero_start_clock_does_not_inflate_the_span(self):
+        # min(starts), not zero: a stream need not start its clock at 0.
+        self._packets([
+            {"pts_time": "10.000000", "duration_time": "0.500000"},
+            {"pts_time": "10.500000", "duration_time": "0.500000"},
+        ])
+        self.assertAlmostEqual(quality_gate.sampled_elapsed_seconds("offset.mp4"), 1.0)
+
+    def test_no_readable_timestamps_is_none_not_zero(self):
+        # "Cannot measure" and "measured, and short" are different answers, and
+        # the caller treats them differently -- None falls back to the frame
+        # count rather than rejecting.
+        self._packets([{"pts_time": "n/a"}, {}])
+        self.assertIsNone(quality_gate.sampled_elapsed_seconds("no-pts.h264"))
+
+    def test_it_asks_ffprobe_for_durations(self):
+        seen = {}
+        quality_gate._run_ffprobe = lambda cmd: seen.update(cmd=cmd) or {"packets": []}
+        quality_gate.sampled_elapsed_seconds("x.mp4")
+        self.assertIn("packet=pts_time,duration_time", seen["cmd"])
+        # And the read stays bounded: this is a gate that must cost less than
+        # the work it prevents, so it must never scan a long file.
+        self.assertTrue(any(str(a).startswith("%+") for a in seen["cmd"]), seen["cmd"])
+
+
 class TestSampleMeanLuminance(unittest.TestCase):
     def setUp(self):
         self._orig = decode_video._run_ffmpeg
