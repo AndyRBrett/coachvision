@@ -53,7 +53,8 @@ class TestCheckClipQuality(unittest.TestCase):
     # place for the rest of the suite and making the run order-dependent
     # (Codex P3 on #44). Adding a name to this tuple is now the only thing a
     # new stub needs.
-    PATCHED = ("probe_metadata", "sample_mean_luminance", "sampled_elapsed_seconds")
+    PATCHED = ("probe_metadata", "sample_mean_luminance", "sampled_elapsed_seconds",
+               "sampled_frame_count")
 
     def setUp(self):
         self._orig = {name: getattr(quality_gate, name) for name in self.PATCHED}
@@ -124,17 +125,41 @@ class TestCheckClipQuality(unittest.TestCase):
             "width": 320, "height": 240, "duration": None, "fps": 30.0}
         quality_gate.sampled_elapsed_seconds = lambda src, seconds=2.0: 1.02
         quality_gate.sample_mean_luminance = lambda src: 120.0
+
+        # And the frame count must not even be consulted here. That ordering is
+        # the whole design: timestamps are exact and VFR-safe, frame counting is
+        # only sound for the no-timestamp streams it falls back to. Reversing it
+        # would reinstate the false rejection this test is named for.
+        def _must_not_run(src, seconds=1.0):
+            raise AssertionError("frame count consulted despite readable timestamps")
+        quality_gate.sampled_frame_count = _must_not_run
+
         result = quality_gate.check_clip_quality("vfr-phone-clip.mp4")
         self.assertTrue(result["ok"], result)
 
-    def test_unmeasurable_length_proceeds(self):
-        # No readable timestamps is another "cannot tell", and cannot-tell does
-        # not imply the decode fails. Only a MEASURED span rejects.
+    def test_no_timestamps_falls_back_to_counting_frames(self):
+        # Codex P2 on 11c0332. A raw H.264 elementary stream derives dimensions
+        # and rate from its SPS and carries no PTS, so the timestamp-only
+        # measurement returned None and waived the check -- reopening the
+        # original hole for exactly the input class that motivated it. 6 frames
+        # at 30fps is 0.2s.
         quality_gate.probe_metadata = lambda src: {
             "width": 320, "height": 240, "duration": None, "fps": 30.0}
         quality_gate.sampled_elapsed_seconds = lambda src, seconds=2.0: None
+        quality_gate.sampled_frame_count = lambda src, seconds=1.0: 6
         quality_gate.sample_mean_luminance = lambda src: 120.0
-        self.assertTrue(quality_gate.check_clip_quality("no-timestamps.mp4")["ok"])
+        result = quality_gate.check_clip_quality("raw-stream.h264")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["reason"], quality_gate.REASON_TOO_SHORT)
+
+    def test_no_timestamps_but_long_enough_passes(self):
+        # The other half: the fallback must admit a real clip, not just reject.
+        quality_gate.probe_metadata = lambda src: {
+            "width": 320, "height": 240, "duration": None, "fps": 30.0}
+        quality_gate.sampled_elapsed_seconds = lambda src, seconds=2.0: None
+        quality_gate.sampled_frame_count = lambda src, seconds=1.0: 30
+        quality_gate.sample_mean_luminance = lambda src: 120.0
+        self.assertTrue(quality_gate.check_clip_quality("raw-stream.h264")["ok"])
 
     def test_an_empty_frame_sample_is_corrupt_not_acceptable(self):
         # Codex P2 on #44, and it corrects the symmetry the first pass reached
