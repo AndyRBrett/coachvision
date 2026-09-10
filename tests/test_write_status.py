@@ -80,6 +80,54 @@ class TestRejectedFootageIsNotAbsentFootage(unittest.TestCase):
         msg = write_status.build_nudge(20, 14, 0, quality_gate=gate, now=self.NOW)
         self.assertIn("pipeline is idle", msg)
 
+    def test_a_rejection_warning_does_not_ask_for_footage(self):
+        # Codex P2 on #46, and it is this bug one layer down. needs_footage was
+        # derived from the nudge being non-null, so the sentence said "check the
+        # source rather than sending more" while the machine-readable field
+        # still said SEND MORE -- and a consumer reading the field instead of
+        # the prose would take exactly the action this change exists to prevent.
+        import write_status as ws
+        gate = self._gate(1)
+        status = ws.build_status({"last_footage_at": None}, pending_footage=0,
+                                 quality_gate=gate)
+        self.assertIn("arriving but not usable", status["nudge"])
+        self.assertFalse(status["needs_footage"])
+        self.assertEqual(status["nudge_kind"], "quality_gate")
+
+    def test_a_real_idle_status_still_asks_for_footage(self):
+        # The other half: narrowing needs_footage must not silence the case it
+        # was there for.
+        import write_status as ws
+        status = ws.build_status({"last_footage_at": None}, pending_footage=0)
+        self.assertTrue(status["needs_footage"])
+        self.assertEqual(status["nudge_kind"], "idle")
+
+    def test_nudge_kind_agrees_with_the_sentence(self):
+        # The kind is computed beside build_nudge rather than inside it, so this
+        # pins the two against each other -- a reordering in one that is not
+        # mirrored in the other shows up here rather than in a consumer.
+        import write_status as ws
+        cases = [
+            ({"last_footage_at": None}, 0, self._gate(1), "quality_gate",
+             "arriving but not usable"),
+            ({"last_footage_at": None}, 0, None, "idle", "has ever been ingested"),
+            ({"last_footage_at": None}, 2, self._gate(1), "queue_stalled",
+             "queued but unprocessed"),
+        ]
+        for results, pending, gate, kind, fragment in cases:
+            status = ws.build_status(results, pending_footage=pending,
+                                     quality_gate=gate)
+            self.assertEqual(status["nudge_kind"], kind, fragment)
+            self.assertIn(fragment, status["nudge"])
+
+    def test_a_healthy_status_has_no_kind(self):
+        import write_status as ws
+        recent = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        status = ws.build_status({"last_footage_at": recent}, pending_footage=0)
+        self.assertIsNone(status["nudge"])
+        self.assertIsNone(status["nudge_kind"])
+        self.assertFalse(status["needs_footage"])
+
     def test_no_gate_block_behaves_exactly_as_before(self):
         for gate in (None, {}, {"rejected_total": 0, "last_rejection": None}):
             msg = write_status.build_nudge(20, 14, 0, quality_gate=gate, now=self.NOW)

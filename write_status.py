@@ -111,6 +111,38 @@ def _idle_threshold_days() -> int:
         return DEFAULT_IDLE_THRESHOLD_DAYS
 
 
+def quality_gate_warning(days_since, threshold, pending, quality_gate=None, now=None):
+    """The "arriving but refused" message, or None when it does not apply.
+
+    Separate from build_nudge because the two mean OPPOSITE things to a machine.
+    `needs_footage` is derived from the nudge being non-null, so folding this in
+    would publish prose saying "check the source rather than sending more"
+    beside a boolean still saying send more -- and any consumer reading the
+    field instead of the sentence would take exactly the action this exists to
+    prevent (Codex, #46). The caller distinguishes them; see build_status.
+    """
+    # Only where an idle nudge would otherwise fire. While footage is flowing
+    # there is nothing to nudge about, and a rejection alongside working ingest
+    # is already visible in the quality_gate block without a headline.
+    if not (days_since is None or days_since > threshold):
+        return None
+    # A stalled queue speaks first -- clips sitting unprocessed is a different
+    # failure from clips being refused, and the more urgent one.
+    if pending > 0:
+        return None
+
+    rejection = (quality_gate or {}).get("last_rejection") or {}
+    age = _days_since(rejection.get("rejected_at"), now or datetime.now(timezone.utc))
+    if age is None or age > threshold:
+        return None
+
+    total = (quality_gate or {}).get("rejected_total") or 0
+    reason = rejection.get("reason") or "unknown"
+    return (f"Footage is arriving but not usable -- {total} clip(s) rejected "
+            f"before processing, most recently {reason}. "
+            f"Check the source rather than sending more.")
+
+
 def build_nudge(days_since, threshold, pending, quality_gate=None, now=None):
     """Return a human-readable idle nudge, or None when footage is flowing.
 
@@ -138,20 +170,9 @@ def build_nudge(days_since, threshold, pending, quality_gate=None, now=None):
     if pending > 0 and (days_since is None or days_since > threshold):
         return f"{pending} clip(s) queued but unprocessed -- pipeline may be stalled."
 
-    # Checked BEFORE the two idle branches, and only where one of them would
-    # have fired: while footage is flowing normally there is nothing to nudge
-    # about, and a rejection alongside working ingest is already visible in the
-    # quality_gate block without a headline.
-    if days_since is None or days_since > threshold:
-        rejection = (quality_gate or {}).get("last_rejection") or {}
-        age = _days_since(rejection.get("rejected_at"),
-                          now or datetime.now(timezone.utc))
-        if age is not None and age <= threshold:
-            total = (quality_gate or {}).get("rejected_total") or 0
-            reason = rejection.get("reason") or "unknown"
-            return (f"Footage is arriving but not usable -- {total} clip(s) rejected "
-                    f"before processing, most recently {reason}. "
-                    f"Check the source rather than sending more.")
+    warning = quality_gate_warning(days_since, threshold, pending, quality_gate, now)
+    if warning:
+        return warning
 
     if days_since is None:
         return "No footage has ever been ingested -- drop clips in the watched folder to start."
@@ -223,12 +244,31 @@ def build_status(results: dict, pending_footage: int = 0, selftest: dict = None,
     # visible rather than silently passing as healthy.
     threshold = _idle_threshold_days()
     days_since = status["days_since_last_footage"]
+    warning = quality_gate_warning(days_since, threshold, pending_footage,
+                                   quality_gate, now)
     nudge = build_nudge(days_since, threshold, pending_footage,
                         quality_gate=quality_gate, now=now)
     status["idle_threshold_days"] = threshold
     status["pending_footage"] = pending_footage
-    status["needs_footage"] = nudge is not None
+    # NOT simply `nudge is not None` (Codex, #46). A quality-gate warning says
+    # the opposite of "send footage" -- footage IS arriving, it is being
+    # refused -- so flagging it here would publish a machine-readable field
+    # telling any consumer to do the one thing the sentence beside it warns
+    # against. The prose was right and the boolean was still wrong, which is
+    # this bug one layer down.
+    status["needs_footage"] = nudge is not None and warning is None
     status["nudge"] = nudge
+    # Which KIND of attention, so a consumer never has to parse the sentence to
+    # find out. A bool that only distinguishes "send footage" from "nothing"
+    # cannot express a third state, and there are now four.
+    if warning is not None:
+        status["nudge_kind"] = "quality_gate"
+    elif nudge is None:
+        status["nudge_kind"] = None
+    elif pending_footage > 0:
+        status["nudge_kind"] = "queue_stalled"
+    else:
+        status["nudge_kind"] = "idle"
 
     # Pipeline self-test verification: proof the CV pipeline actually processes
     # frames end-to-end (resolves the "0 frames ever -- idle or broken?"
