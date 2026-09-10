@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 STATUS_PATH = "overseer-status.json"
 DEFAULT_RESULTS_PATH = "results/metrics.json"
 DEFAULT_SELFTEST_PATH = "results/selftest.json"
+DEFAULT_QUALITY_GATE_PATH = "results/quality_gate.json"
 DEFAULT_QUEUE_PATH = "ingest_queue.json"
 # Days of idleness after which the overseer should be nudged to feed footage.
 DEFAULT_IDLE_THRESHOLD_DAYS = 14
@@ -87,6 +88,22 @@ def load_selftest() -> dict:
         return {}
 
 
+def load_quality_gate() -> dict:
+    """Read the clip quality gate's rejection record, or {} if none yet exists.
+
+    Written by quality_gate.record_rejection when process_footage.py rejects a
+    clip (too_short/too_dark/resolution_too_low/corrupt_file) before it reaches
+    the CV pipeline. Surfacing it here is what keeps a rejected clip visible
+    instead of just quietly not appearing in reports/index.json.
+    """
+    path = os.environ.get("COACHVISION_QUALITY_GATE_PATH", DEFAULT_QUALITY_GATE_PATH)
+    try:
+        with open(path) as fh:
+            return json.load(fh)
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
 def _idle_threshold_days() -> int:
     try:
         return int(os.environ.get("COACHVISION_IDLE_THRESHOLD_DAYS", DEFAULT_IDLE_THRESHOLD_DAYS))
@@ -125,7 +142,8 @@ def build_selftest_summary(selftest: dict) -> dict:
     return summary
 
 
-def build_status(results: dict, pending_footage: int = 0, selftest: dict = None) -> dict:
+def build_status(results: dict, pending_footage: int = 0, selftest: dict = None,
+                  quality_gate: dict = None) -> dict:
     """Map pipeline results onto the overseer status schema.
 
     Always-emitted fields default to a healthy-idle record. Optional fields
@@ -183,6 +201,16 @@ def build_status(results: dict, pending_footage: int = 0, selftest: dict = None)
     # ambiguity that got the project flagged). Written by pipeline.py --self-test.
     status["pipeline_selftest"] = build_selftest_summary(selftest or {})
 
+    # Clip quality gate (Overseer #43): a clip rejected before reaching the CV
+    # pipeline (too_short/too_dark/resolution_too_low/corrupt_file) shows up
+    # here with its reason, instead of silently producing degraded/empty
+    # technique-tracking output or just not appearing anywhere.
+    quality_gate = quality_gate or {}
+    status["quality_gate"] = {
+        "rejected_total": quality_gate.get("rejected_total", 0),
+        "last_rejection": quality_gate.get("last_rejection"),
+    }
+
     detection_rate = results.get("detection_rate")
     if detection_rate is not None:
         status["detection_rate"] = detection_rate
@@ -199,6 +227,7 @@ def main() -> None:
         load_results(),
         pending_footage=load_pending_footage(),
         selftest=load_selftest(),
+        quality_gate=load_quality_gate(),
     )
     with open(STATUS_PATH, "w") as fh:
         json.dump(status, fh, indent=2, sort_keys=True)

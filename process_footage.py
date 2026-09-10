@@ -29,6 +29,7 @@ import fight_analysis
 import highlights
 import pipeline
 import pose_overlay
+import quality_gate
 
 DEFAULT_REPORTS_DIR = "reports"
 INDEX_NAME = "index.json"
@@ -194,7 +195,23 @@ def process(
     Artifacts: ``reports/<id>/coaching/{report.json,summary.txt}``,
     ``reports/<id>/highlights/{manifest.json,<segment>.mp4}``,
     ``reports/<id>/results/metrics.json``.
+
+    Before any of that, a quality gate (Overseer #43) checks resolution,
+    duration, frame rate and exposure via a cheap ffprobe + tiny frame sample
+    -- so a corrupt/too-short/too-dark/too-small clip is rejected with a clear
+    reason instead of burning a full decode + CV pass on unusable footage.
     """
+    gate = quality_gate.check_clip_quality(src_video)
+    if not gate["ok"]:
+        quality_gate.record_rejection(gate["reason"], gate.get("detail", ""), gate.get("metadata"))
+        return {
+            "id": slugify(name or source_label or src_video),
+            "title": name or source_label or src_video,
+            "rejected": True,
+            "rejection_reason": gate["reason"],
+            "rejection_detail": gate.get("detail"),
+        }
+
     clip_id = slugify(name or source_label or src_video)
     if clip_id in _GENERIC_IDS:
         clip_id = "clip-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
@@ -342,6 +359,13 @@ def main():
         name=args.name,
         annotate=args.annotate,
     )
+    if entry.get("rejected"):
+        # Not a pipeline failure -- exit 0 so the workflow still runs
+        # write_status.py and commits the rejection to overseer-status.json
+        # instead of the run just stopping here with no visible trace.
+        print(f"Clip rejected by quality gate ({entry['rejection_reason']}): "
+              f"{entry.get('rejection_detail') or ''}")
+        return
     print(f"Processed {entry['source']} [{entry['domain']}]: "
           f"{entry['frames_processed']} frames -> {entry['segment_count']} segments. "
           f"Reports under {os.path.join(args.reports_dir, entry['id'])}/")

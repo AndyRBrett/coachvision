@@ -101,6 +101,19 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add reports overseer-status.json
+          # results/quality_gate.json carries the RUNNING rejected_total, so it
+          # has to survive the next fresh checkout the way ingest state does.
+          # Uncommitted it resets every run and the count could only ever read
+          # 0 or 1 -- the feature would forget every rejection but the newest.
+          # (.gitignore excludes only /results/metrics.json, so it is trackable.)
+          #
+          # Guarded because it is written only on a run that REJECTS a clip, and
+          # `git add` on a missing path is a fatal error under this step's
+          # `bash -e` -- naming it unconditionally would turn every healthy run
+          # red.
+          if [ -f results/quality_gate.json ]; then
+            git add results/quality_gate.json
+          fi
           if git diff --cached --quiet; then
             echo "No new reports"
           else

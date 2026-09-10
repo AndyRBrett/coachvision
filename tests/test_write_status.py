@@ -58,6 +58,22 @@ class TestBuildStatus(unittest.TestCase):
         self.assertIn("last_run_at", status)
 
 
+class TestQualityGateSummary(unittest.TestCase):
+    def test_defaults_to_no_rejections(self):
+        status = write_status.build_status({})
+        self.assertEqual(status["quality_gate"]["rejected_total"], 0)
+        self.assertIsNone(status["quality_gate"]["last_rejection"])
+
+    def test_surfaces_rejection_record(self):
+        record = {
+            "rejected_total": 3,
+            "last_rejection": {"reason": "too_dark", "detail": "mean luminance 2.0"},
+        }
+        status = write_status.build_status({}, quality_gate=record)
+        self.assertEqual(status["quality_gate"]["rejected_total"], 3)
+        self.assertEqual(status["quality_gate"]["last_rejection"]["reason"], "too_dark")
+
+
 class TestSelfTestSummary(unittest.TestCase):
     def test_missing_selftest_reads_unverified(self):
         summary = write_status.build_selftest_summary({})
