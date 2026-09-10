@@ -36,6 +36,12 @@ SAMPLE_DURATION_S = 3.0
 # Mean luminance (0-255, PGM bytes are already grayscale) below this reads as a
 # lens-cap-on / dark-room clip rather than real footage.
 MIN_MEAN_LUMINANCE = 16.0
+# When the container carries no duration, length is MEASURED instead: decode the
+# first MIN_DURATION_S at native frame rate and count what comes out. A stream
+# that ends early yields fewer frames than its own fps implies. The tolerance
+# absorbs rounding and variable frame rate -- the check is meant to catch a clip
+# that is a fifth of a second long, not to adjudicate 0.95s against 1.0s.
+MIN_LENGTH_FRAME_TOLERANCE = 0.8
 
 REASON_TOO_SHORT = "too_short"
 REASON_TOO_DARK = "too_dark"
@@ -97,15 +103,33 @@ def probe_metadata(src):
     }
 
 
-def _sample_decode_cmd(src):
-    """ffmpeg argv for a tiny grayscale frame sample, used for the exposure check."""
-    vf = f"fps={SAMPLE_FPS},scale={SAMPLE_WIDTH}:-2,format=gray"
+def _sample_decode_cmd(src, fps=SAMPLE_FPS, seconds=SAMPLE_DURATION_S):
+    """ffmpeg argv for a tiny grayscale frame sample.
+
+    ``fps=None`` samples at the source's own frame rate, which is what the
+    length measurement needs -- thinning to 1fps would make every clip shorter
+    than a second look identical.
+    """
+    filters = [] if fps is None else [f"fps={fps}"]
+    filters += [f"scale={SAMPLE_WIDTH}:-2", "format=gray"]
     return [
         "ffmpeg", "-nostdin", "-loglevel", "error",
-        "-t", str(SAMPLE_DURATION_S), "-i", src,
-        "-vf", vf,
+        "-t", str(seconds), "-i", src,
+        "-vf", ",".join(filters),
         "-f", "image2pipe", "-vcodec", "pgm", "pipe:1",
     ]
+
+
+def _sample_frames(src, fps=SAMPLE_FPS, seconds=SAMPLE_DURATION_S):
+    """Decode a tiny grayscale sample of ``src`` and return its frames."""
+    pgm_bytes = decode_video._run_ffmpeg(_sample_decode_cmd(src, fps, seconds))
+    if not pgm_bytes:
+        return []
+    with tempfile.NamedTemporaryFile(suffix=".pgm") as tmp:
+        tmp.write(pgm_bytes)
+        tmp.flush()
+        _w, _h, frames = detect.load_pgm_frames(tmp.name)
+    return frames
 
 
 def sample_mean_luminance(src):
@@ -115,18 +139,17 @@ def sample_mean_luminance(src):
     luminance) at a fraction of the real decode's resolution/frame rate/length.
     Returns None if the sample produced no frames.
     """
-    pgm_bytes = decode_video._run_ffmpeg(_sample_decode_cmd(src))
-    if not pgm_bytes:
-        return None
-    with tempfile.NamedTemporaryFile(suffix=".pgm") as tmp:
-        tmp.write(pgm_bytes)
-        tmp.flush()
-        _w, _h, frames = detect.load_pgm_frames(tmp.name)
+    frames = _sample_frames(src)
     if not frames:
         return None
     total = sum(sum(frame) for frame in frames)
     pixel_count = sum(len(frame) for frame in frames)
     return total / pixel_count if pixel_count else None
+
+
+def sampled_frame_count(src, seconds=MIN_DURATION_S):
+    """Frames decoded from the first ``seconds`` of ``src``, at its native rate."""
+    return len(_sample_frames(src, fps=None, seconds=seconds))
 
 
 def check_clip_quality(src):
@@ -159,29 +182,58 @@ def check_clip_quality(src):
 
     # An UNKNOWN duration is not a short duration, and this gate must not
     # discard footage on the strength of missing metadata. Some containers
-    # simply do not carry one -- a fragmented MP4 from a phone, a stream copy --
-    # and mobile quick-upload (#34) is exactly the ingest path this gate was
-    # asked for. A genuinely truncated or half-written file does not reach this
-    # line: ffprobe fails outright on it and probe_metadata already answers
-    # corrupt_file.
+    # simply do not carry one -- a fragmented MP4 from a phone, a raw H.264
+    # elementary stream that derives dimensions and rate from its SPS -- and
+    # mobile quick-upload (#34) is exactly the ingest path this gate was asked
+    # for. A truncated or half-written file does not reach this line: ffprobe
+    # fails outright on it and probe_metadata already answers corrupt_file.
     #
-    # This is the same call made for luminance below, and the opposite of the
-    # one made for frame rate above: an unreadable fps means the decode itself
-    # cannot be planned, while an unreadable duration costs only this check.
-    # Three unknowns, and each is answered on what its absence actually implies.
-    if metadata["duration"] is not None and metadata["duration"] < MIN_DURATION_S:
-        return {
-            "ok": False, "reason": REASON_TOO_SHORT,
-            "detail": f"duration {metadata['duration']}s is below the {MIN_DURATION_S}s minimum",
-            "metadata": metadata,
-        }
+    # But not knowing the length is not a reason to stop CHECKING it. Skipping
+    # the minimum outright would leave `too_short` unenforced for precisely the
+    # inputs this clause admits, so an unknown duration is measured from decoded
+    # frames instead of trusted or waived.
+    if metadata["duration"] is not None:
+        if metadata["duration"] < MIN_DURATION_S:
+            return {
+                "ok": False, "reason": REASON_TOO_SHORT,
+                "detail": f"duration {metadata['duration']}s is below the {MIN_DURATION_S}s minimum",
+                "metadata": metadata,
+            }
+    else:
+        try:
+            frames = sampled_frame_count(src)
+        except RuntimeError as exc:  # ffmpeg failed on a file ffprobe accepted
+            return {"ok": False, "reason": REASON_CORRUPT_FILE, "detail": str(exc),
+                    "metadata": metadata}
+        needed = max(1, int(metadata["fps"] * MIN_DURATION_S * MIN_LENGTH_FRAME_TOLERANCE))
+        if frames < needed:
+            return {
+                "ok": False, "reason": REASON_TOO_SHORT,
+                "detail": (f"no duration in metadata and only {frames} frame(s) in the "
+                           f"first {MIN_DURATION_S}s at {metadata['fps']:.3g}fps "
+                           f"(expected at least {needed})"),
+                "metadata": metadata,
+            }
 
     try:
         luminance = sample_mean_luminance(src)
     except RuntimeError as exc:  # ffmpeg missing/failed on a file ffprobe accepted
         return {"ok": False, "reason": REASON_CORRUPT_FILE, "detail": str(exc), "metadata": metadata}
 
-    if luminance is not None and luminance < MIN_MEAN_LUMINANCE:
+    # An EMPTY sample is not an unknown to wave through. ffmpeg can exit 0 and
+    # emit no frames at all on a file ffprobe was happy to describe, and the
+    # real decode does not tolerate that: decode_video.decode_to_pgm_gz raises
+    # "ffmpeg produced no frames" for the same input. Passing it here converts a
+    # recordable corrupt_file rejection into a crashed workflow run -- the exact
+    # outcome this gate exists to prevent, arrived at by being lenient.
+    if luminance is None:
+        return {
+            "ok": False, "reason": REASON_CORRUPT_FILE,
+            "detail": "the frame sample produced no frames",
+            "metadata": metadata,
+        }
+
+    if luminance < MIN_MEAN_LUMINANCE:
         return {
             "ok": False, "reason": REASON_TOO_DARK,
             "detail": f"mean luminance {luminance:.1f} is below the {MIN_MEAN_LUMINANCE} minimum",

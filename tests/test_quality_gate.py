@@ -73,7 +73,7 @@ class TestCheckClipQuality(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertEqual(result["reason"], quality_gate.REASON_TOO_SHORT)
 
-    def test_unknown_duration_is_not_treated_as_too_short(self):
+    def test_unknown_duration_is_measured_not_rejected(self):
         # A container that carries no duration is not a short clip, and this
         # gate must not discard footage on missing metadata. Fragmented MP4s
         # from a phone are the case -- and mobile quick-upload (#34) is one of
@@ -81,9 +81,37 @@ class TestCheckClipQuality(unittest.TestCase):
         # this far: ffprobe fails on it and probe_metadata answers corrupt_file.
         quality_gate.probe_metadata = lambda src: {
             "width": 320, "height": 240, "duration": None, "fps": 30.0}
+        quality_gate.sampled_frame_count = lambda src, seconds=1.0: 30
         quality_gate.sample_mean_luminance = lambda src: 120.0
         result = quality_gate.check_clip_quality("no-duration.mp4")
         self.assertTrue(result["ok"], result)
+
+    def test_unknown_duration_still_enforces_the_minimum(self):
+        # Codex P2 on #44. Admitting unknown-duration inputs must not leave the
+        # too_short gate unenforced for exactly those inputs -- a raw elementary
+        # stream can report dimensions and rate with no duration and still be a
+        # fifth of a second long. 6 frames at 30fps is 0.2s.
+        quality_gate.probe_metadata = lambda src: {
+            "width": 320, "height": 240, "duration": None, "fps": 30.0}
+        quality_gate.sampled_frame_count = lambda src, seconds=1.0: 6
+        quality_gate.sample_mean_luminance = lambda src: 120.0
+        result = quality_gate.check_clip_quality("short-no-duration.mp4")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["reason"], quality_gate.REASON_TOO_SHORT)
+
+    def test_an_empty_frame_sample_is_corrupt_not_acceptable(self):
+        # Codex P2 on #44, and it corrects the symmetry the first pass reached
+        # for. ffmpeg can exit 0 emitting no frames on a file ffprobe described
+        # happily -- and decode_video.decode_to_pgm_gz raises "ffmpeg produced
+        # no frames" for that same input. Waving it through here turns a
+        # recordable rejection into a crashed run, which is the outcome this
+        # gate exists to prevent.
+        quality_gate.probe_metadata = lambda src: {
+            "width": 320, "height": 240, "duration": 5.0, "fps": 30.0}
+        quality_gate.sample_mean_luminance = lambda src: None
+        result = quality_gate.check_clip_quality("no-frames.mp4")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["reason"], quality_gate.REASON_CORRUPT_FILE)
 
     def test_a_known_short_duration_is_still_rejected(self):
         # The other half of the change above: relaxing the unknown case must not
