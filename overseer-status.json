@@ -7,12 +7,13 @@
   "failed_frames": 0,
   "footage_processed": 0,
   "frames_processed": 0,
-  "generated_at": "2026-09-07T11:55:25Z",
+  "generated_at": "2026-09-14T12:10:47Z",
   "idle_threshold_days": 14,
   "last_footage_at": null,
-  "last_run_at": "2026-09-07T11:55:25Z",
+  "last_run_at": "2026-09-14T12:10:47Z",
   "needs_footage": true,
   "nudge": "No footage has ever been ingested -- drop clips in the watched folder to start.",
+  "nudge_kind": "idle",
   "pending_footage": 0,
   "pipeline_selftest": {
     "clip": "fixtures/martialarts_clip.pgm.gz",
@@ -20,6 +21,10 @@
     "frames_processed": 77,
     "ok": true,
     "segment_count": 3,
-    "verified_at": "2026-09-07T11:55:24Z"
+    "verified_at": "2026-09-14T12:10:46Z"
+  },
+  "quality_gate": {
+    "last_rejection": null,
+    "rejected_total": 0
   }
 }
