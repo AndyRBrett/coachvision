@@ -7,10 +7,10 @@
   "failed_frames": 0,
   "footage_processed": 0,
   "frames_processed": 0,
-  "generated_at": "2026-09-28T13:15:41Z",
+  "generated_at": "2026-10-05T13:58:35Z",
   "idle_threshold_days": 14,
   "last_footage_at": null,
-  "last_run_at": "2026-09-28T13:15:41Z",
+  "last_run_at": "2026-10-05T13:58:35Z",
   "needs_footage": true,
   "nudge": "No footage has ever been ingested -- drop clips in the watched folder to start.",
   "nudge_kind": "idle",
@@ -21,7 +21,7 @@
     "frames_processed": 77,
     "ok": true,
     "segment_count": 3,
-    "verified_at": "2026-09-28T13:15:41Z"
+    "verified_at": "2026-10-05T13:58:35Z"
   },
   "quality_gate": {
     "last_rejection": null,
